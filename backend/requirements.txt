@@ -1,6 +1,8 @@
 # --- Core ---
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
+# Требуется FastAPI для приёма HAR-файла (multipart/form-data).
+python-multipart==0.0.20
 pydantic==2.10.4
 pydantic-settings==2.7.0
 
@@ -21,7 +23,7 @@ keyring==25.6.0
 # pyrogram==2.0.106
 # tgcrypto==1.2.5
 
-# --- Analytics (Этап 3) ---
-# numpy==2.2.1
-# pandas==2.2.3
-# statsmodels==0.14.4
+# --- Analytics ---
+# numpy достаточно: регрессия и квантили реализованы в app/analytics.
+# pandas и statsmodels добавили бы ~60 МБ к exe ради того же результата.
+numpy==2.2.1

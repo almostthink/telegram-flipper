@@ -10,10 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import paths
-from app.api import routes_system, ws
+from app import paths, scheduler
+from app.api import routes_auth, routes_market, routes_system, routes_trading, ws
 from app.config import API_PREFIX, APP_VERSION, settings
 from app.logging_setup import setup_logging
+from app.storage.db import dispose_db, init_db
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,17 @@ async def lifespan(app: FastAPI):
     log.info("Telegram Gift Flipper %s", APP_VERSION)
     log.info("Папка данных: %s", paths.data_dir())
     log.info("Режим: %s", "PAPER (симуляция)" if settings.paper_mode else "LIVE")
+
+    await init_db()
+    if settings.enable_scheduler:
+        scheduler.start()
+    else:
+        log.info("Планировщик выключен (FLIPPER_ENABLE_SCHEDULER=0)")
+
     yield
+
+    scheduler.shutdown()
+    await dispose_db()
     log.info("Остановка")
 
 
@@ -47,7 +58,13 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    app.include_router(routes_system.router, prefix=API_PREFIX)
+    for router in (
+        routes_system.router,
+        routes_market.router,
+        routes_trading.router,
+        routes_auth.router,
+    ):
+        app.include_router(router, prefix=API_PREFIX)
     app.include_router(ws.router, prefix="/api")
 
     _mount_frontend(app)

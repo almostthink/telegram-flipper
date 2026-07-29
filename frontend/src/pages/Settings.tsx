@@ -1,19 +1,466 @@
-import { Page, Planned } from '../components/Page'
+import { useRef, useState } from 'react'
+import { api } from '../lib/api'
+import { useApi } from '../lib/useApi'
+import { Alert, Button, Page } from '../components/ui'
+
+const MARKETS = [
+  { key: 'portals', label: 'Portals', tradable: true },
+  { key: 'mrkt', label: 'MRKT', tradable: true },
+  { key: 'tonnel', label: 'Tonnel', tradable: false },
+  { key: 'getgems', label: 'GetGems', tradable: false },
+]
 
 export default function Settings() {
+  const auth = useApi(() => api.auth())
+  const config = useApi(() => api.config())
+  const [message, setMessage] = useState<{ tone: 'info' | 'error' | 'warn'; text: string } | null>(
+    null,
+  )
+
+  const report = (tone: 'info' | 'error' | 'warn', text: string) => setMessage({ tone, text })
+
+  const patch = async (body: Record<string, unknown>) => {
+    try {
+      await api.updateConfig(body)
+      await config.reload()
+      report('info', 'Сохранено')
+    } catch (e) {
+      report('error', e instanceof Error ? e.message : String(e))
+    }
+  }
+
   return (
     <Page title="Настройки" subtitle="Доступы, комиссии и пороги отбора">
-      <Planned
-        stage={1}
-        items={[
-          'Подключение Telegram: api_id и api_hash хранятся локально в Windows DPAPI',
-          'Авто-обновление tma-токена площадок через userbot-сессию',
-          'HAR-импорт для восстановления эндпоинтов MRKT',
-          'Комиссии площадок и оценка газа TON',
-          'Пороги отбора: минимальный ROI, ликвидность, максимальный TTS',
-          'Переключатель paper/live режима',
-        ]}
-      />
+      {message && (
+        <div className="mb-4">
+          <Alert tone={message.tone === 'warn' ? 'warn' : message.tone}>{message.text}</Alert>
+        </div>
+      )}
+
+      {auth.data && !auth.data.vault_secure && (
+        <div className="mb-4">
+          <Alert tone="warn">
+            Системное хранилище секретов недоступно ({auth.data.vault_backend}). Токены
+            сохраняются в файл с правами 0600 в папке данных — это менее защищено, чем
+            Windows DPAPI.
+          </Alert>
+        </div>
+      )}
+
+      <div className="mb-4 card">
+        <h2 className="mb-1 text-sm font-medium text-slate-300">Режим работы</h2>
+        <p className="mb-4 text-xs text-slate-500">
+          Paper-режим симулирует сделки на реальных рыночных данных. Выключайте его
+          только после того, как бэктест и журнал покажут осмысленный результат.
+        </p>
+        {config.data && (
+          <div className="flex items-center justify-between rounded-lg bg-ink-700 px-4 py-3">
+            <div>
+              <div className="text-sm text-slate-200">
+                {config.data.paper_mode ? 'PAPER — симуляция' : 'LIVE — реальные деньги'}
+              </div>
+              <div className="text-xs text-slate-500">
+                {config.data.paper_mode
+                  ? 'Деньги не тратятся'
+                  : 'Сделки исполняются на вашем балансе'}
+              </div>
+            </div>
+            <Button
+              variant={config.data.paper_mode ? 'danger' : 'primary'}
+              onClick={() => void patch({ paper_mode: !config.data?.paper_mode })}
+            >
+              {config.data.paper_mode ? 'Перейти в LIVE' : 'Вернуть PAPER'}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <TokensCard auth={auth} onReport={report} />
+        <UserbotCard auth={auth} onReport={report} />
+      </div>
+
+      <HarCard onReport={report} onDone={() => void auth.reload()} />
+
+      {config.data && (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="card">
+            <h2 className="mb-1 text-sm font-medium text-slate-300">Пороги отбора</h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Лот должен пройти все пороги одновременно.
+            </p>
+            <div className="space-y-3">
+              <Field
+                label="Минимальный чистый ROI"
+                value={config.data.analytics.min_roi}
+                onSave={(value) => void patch({ analytics: { min_roi: value } })}
+              />
+              <Field
+                label="Минимальная ликвидность (0..1)"
+                value={config.data.analytics.min_liquidity_score}
+                onSave={(value) => void patch({ analytics: { min_liquidity_score: value } })}
+              />
+              <Field
+                label="Максимальное время до продажи, ч"
+                value={config.data.analytics.max_tts_hours}
+                onSave={(value) => void patch({ analytics: { max_tts_hours: value } })}
+              />
+              <Field
+                label="Максимальное падение флора за 24ч"
+                value={config.data.analytics.max_floor_drop_24h}
+                onSave={(value) => void patch({ analytics: { max_floor_drop_24h: value } })}
+              />
+              <Field
+                label="Газ на транзакцию, TON"
+                value={config.data.analytics.gas_ton}
+                onSave={(value) => void patch({ analytics: { gas_ton: value } })}
+              />
+            </div>
+          </div>
+
+          <div className="card">
+            <h2 className="mb-1 text-sm font-medium text-slate-300">Стратегия продажи</h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Выставляем с наценкой, затем снижаем цену шагами до порога безубытка.
+            </p>
+            <div className="space-y-3">
+              <Field
+                label="Стартовая наценка"
+                value={config.data.sell.initial_markup}
+                onSave={(value) => void patch({ sell: { initial_markup: value } })}
+              />
+              <Field
+                label="Интервал снижения, ч"
+                value={config.data.sell.reprice_interval_hours}
+                onSave={(value) => void patch({ sell: { reprice_interval_hours: value } })}
+              />
+              <Field
+                label="Шаг снижения"
+                value={config.data.sell.reprice_step}
+                onSave={(value) => void patch({ sell: { reprice_step: value } })}
+              />
+              <Field
+                label="Максимальный холд, ч"
+                value={config.data.sell.max_hold_hours}
+                onSave={(value) => void patch({ sell: { max_hold_hours: value } })}
+              />
+            </div>
+          </div>
+
+          <div className="card lg:col-span-2">
+            <h2 className="mb-1 text-sm font-medium text-slate-300">Комиссии площадок</h2>
+            <p className="mb-4 text-xs text-slate-500">
+              Указаны долей: 0.05 = 5%. Уточните по факту — от этих чисел напрямую
+              зависит порог безубытка.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {MARKETS.map((market) => (
+                <Field
+                  key={market.key}
+                  label={`${market.label} — комиссия продавца`}
+                  value={config.data!.marketplaces[market.key]?.fee_sell ?? 0.05}
+                  onSave={(value) =>
+                    void patch({
+                      marketplaces: {
+                        ...config.data!.marketplaces,
+                        [market.key]: {
+                          ...config.data!.marketplaces[market.key],
+                          fee_sell: value,
+                        },
+                      },
+                    })
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </Page>
+  )
+}
+
+function TokensCard({
+  auth,
+  onReport,
+}: {
+  auth: ReturnType<typeof useApi<Awaited<ReturnType<typeof api.auth>>>>
+  onReport: (tone: 'info' | 'error', text: string) => void
+}) {
+  const [market, setMarket] = useState('portals')
+  const [token, setToken] = useState('')
+
+  const save = async () => {
+    try {
+      const result = await api.setToken(market, token)
+      onReport('info', result.detail)
+      setToken('')
+      await auth.reload()
+    } catch (e) {
+      onReport('error', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="mb-1 text-sm font-medium text-slate-300">Токены площадок</h2>
+      <p className="mb-4 text-xs text-slate-500">
+        DevTools → Network → любой запрос к площадке → заголовок Authorization
+        (начинается с «tma»). Живёт 1–7 дней.
+      </p>
+
+      <div className="mb-4 space-y-2">
+        {MARKETS.map((item) => {
+          const state = auth.data?.markets[item.key]
+          return (
+            <div
+              key={item.key}
+              className="flex items-center justify-between rounded-lg bg-ink-700 px-3 py-2 text-sm"
+            >
+              <span className="text-slate-300">{item.label}</span>
+              <span
+                className={`text-xs ${
+                  !state?.configured
+                    ? 'text-slate-600'
+                    : state.stale
+                      ? 'text-warn'
+                      : 'text-profit'
+                }`}
+              >
+                {!state?.configured
+                  ? 'не задан'
+                  : state.stale
+                    ? `устарел (${state.age_hours}ч)`
+                    : `активен (${state.source})`}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="space-y-2">
+        <select
+          value={market}
+          onChange={(event) => setMarket(event.target.value)}
+          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-200"
+        >
+          {MARKETS.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <textarea
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+          rows={3}
+          placeholder="tma query_id=..."
+          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+        />
+        <Button variant="primary" disabled={!token.trim()} onClick={() => void save()}>
+          Сохранить токен
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function UserbotCard({
+  auth,
+  onReport,
+}: {
+  auth: ReturnType<typeof useApi<Awaited<ReturnType<typeof api.auth>>>>
+  onReport: (tone: 'info' | 'error' | 'warn', text: string) => void
+}) {
+  const [apiId, setApiId] = useState('')
+  const [apiHash, setApiHash] = useState('')
+
+  const save = async () => {
+    try {
+      const result = await api.setCredentials(apiId, apiHash)
+      onReport('info', result.detail)
+      setApiId('')
+      setApiHash('')
+      await auth.reload()
+    } catch (e) {
+      onReport('error', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const available = auth.data?.userbot_available
+
+  return (
+    <div className="card">
+      <h2 className="mb-1 text-sm font-medium text-slate-300">
+        Автообновление токена (userbot)
+      </h2>
+      <p className="mb-4 text-xs text-slate-500">
+        Приложение само логинится в Telegram и обновляет токен. Работает автономно,
+        но требует хранить сессию Telegram локально и повышает риск блокировки
+        аккаунта — используйте отдельный.
+      </p>
+
+      {!available ? (
+        <Alert tone="warn">
+          Pyrogram не установлен. Установите <code>pip install pyrogram tgcrypto</code>{' '}
+          или пользуйтесь ручным вводом токена — он работает без дополнительных
+          зависимостей.
+        </Alert>
+      ) : (
+        <div className="space-y-2">
+          <div className="text-xs text-slate-500">
+            Получить на my.telegram.org →&nbsp;API development tools
+          </div>
+          <input
+            value={apiId}
+            onChange={(event) => setApiId(event.target.value)}
+            placeholder="api_id"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+          />
+          <input
+            value={apiHash}
+            onChange={(event) => setApiHash(event.target.value)}
+            placeholder="api_hash"
+            type="password"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              disabled={!apiId.trim() || !apiHash.trim()}
+              onClick={() => void save()}
+            >
+              Сохранить
+            </Button>
+            {auth.data?.credentials_saved && (
+              <Button
+                onClick={() =>
+                  void api
+                    .refreshToken('portals')
+                    .then((r) => onReport('info', r.detail))
+                    .catch((e: Error) => onReport('error', e.message))
+                }
+              >
+                Обновить токен Portals
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HarCard({
+  onReport,
+  onDone,
+}: {
+  onReport: (tone: 'info' | 'error' | 'warn', text: string) => void
+  onDone: () => void
+}) {
+  const [market, setMarket] = useState('mrkt')
+  const [result, setResult] = useState<Awaited<ReturnType<typeof api.importHar>> | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const upload = async (file: File) => {
+    try {
+      const response = await api.importHar(market, file)
+      setResult(response)
+      onReport(
+        'info',
+        `Найдено эндпоинтов: ${response.found.length}${
+          response.token_saved ? ', токен сохранён' : ''
+        }`,
+      )
+      onDone()
+    } catch (e) {
+      onReport('error', e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="mb-1 text-sm font-medium text-slate-300">Импорт эндпоинтов из HAR</h2>
+      <p className="mb-4 text-xs leading-relaxed text-slate-500">
+        У MRKT и Portals нет официального API, и адреса запросов меняются. Откройте
+        мини-апп в браузере, полистайте список подарков, сохраните HAR
+        (DevTools → Network → Export HAR) и загрузите сюда — приложение восстановит
+        реальные пути и заголовок авторизации. Файл разбирается локально и не
+        сохраняется.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={market}
+          onChange={(event) => setMarket(event.target.value)}
+          className="rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-200"
+        >
+          {MARKETS.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".har,application/json"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) void upload(file)
+          }}
+        />
+        <Button variant="primary" onClick={() => fileRef.current?.click()}>
+          Выбрать HAR-файл
+        </Button>
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-1 rounded-lg bg-ink-700 p-3 text-xs">
+          <div className="mb-2 text-slate-400">Базовый адрес: {result.base_url}</div>
+          {result.found.map((item) => (
+            <div key={item.endpoint} className="flex justify-between font-mono text-slate-500">
+              <span className="text-slate-300">{item.endpoint}</span>
+              <span>
+                {item.method} {item.path}
+                {item.records_in_sample > 0 && ` (${item.records_in_sample} записей)`}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Field({
+  label,
+  value,
+  onSave,
+}: {
+  label: string
+  value: number
+  onSave: (value: number) => void
+}) {
+  const [draft, setDraft] = useState(String(value))
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-sm text-slate-400">{label}</span>
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className="w-24 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-sm text-slate-200"
+        />
+        <Button
+          disabled={draft === String(value) || Number.isNaN(Number(draft))}
+          onClick={() => onSave(Number(draft))}
+        >
+          OK
+        </Button>
+      </div>
+    </div>
   )
 }

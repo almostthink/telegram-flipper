@@ -36,6 +36,16 @@ a = Analysis(  # noqa: F821
         "uvicorn.protocols.websockets.auto",
         "uvicorn.lifespan",
         "uvicorn.lifespan.on",
+        # SQLAlchemy подтягивает драйвер БД по строке подключения, статического
+        # импорта нет — без этих строк собранный exe падает на старте с
+        # ModuleNotFoundError: aiosqlite.
+        "aiosqlite",
+        "sqlalchemy.dialects.sqlite",
+        "sqlalchemy.dialects.sqlite.aiosqlite",
+        # APScheduler так же резолвит планировщики и триггеры по имени.
+        "apscheduler.schedulers.asyncio",
+        "apscheduler.triggers.interval",
+        "apscheduler.executors.asyncio",
         "app.main",
     ],
     hookspath=[],

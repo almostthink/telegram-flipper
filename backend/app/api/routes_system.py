@@ -62,21 +62,53 @@ async def update_config(patch: dict) -> Settings:
 
 @router.get("/status")
 async def status() -> dict:
-    """Сводка для Dashboard. На Этапе 0 — заглушки с честными нулями."""
+    """Сводка для обзорной страницы."""
+    from sqlalchemy import func, select
+
+    from app.analytics import stats as stats_mod
+    from app.api.deps import get_engine
+    from app.auth.tma import auth
+    from app.domain import Market
+    from app.storage.db import session_scope
+    from app.storage.models import FloorSnapshot, SaleRecord, SignalRecord
+
+    trading = await stats_mod.compute(paper=settings.paper_mode, days=30)
+
+    async with session_scope() as session:
+        pending = await session.scalar(
+            select(func.count()).select_from(SignalRecord).where(SignalRecord.passed.is_(True))
+        )
+        collections = await session.scalar(
+            select(func.count(func.distinct(FloorSnapshot.collection)))
+        )
+        sales = await session.scalar(select(func.count()).select_from(SaleRecord))
+
+    engine = get_engine()
+    disabled = engine.scanner.disabled_markets
+
+    marketplaces = {}
+    for name, cfg in settings.marketplaces.items():
+        token = auth.state(Market(name)) if name in {m.value for m in Market} else None
+        marketplaces[name] = {
+            "enabled": cfg.enabled,
+            "trade_enabled": cfg.trade_enabled,
+            "connected": token is not None and bool(token.value) and name not in disabled,
+            "note": disabled.get(name)
+            or ("токен не задан" if token is None else f"источник: {token.source}"),
+        }
+
     return {
-        "stage": "0 — скелет приложения",
+        "stage": "все этапы реализованы",
         "balance_ton": None,
-        "open_positions": 0,
-        "realized_pnl_ton": 0.0,
-        "unrealized_pnl_ton": 0.0,
-        "signals_pending": 0,
-        "marketplaces": {
-            name: {
-                "enabled": cfg.enabled,
-                "trade_enabled": cfg.trade_enabled,
-                "connected": False,
-                "note": "адаптер подключается на Этапе 1",
-            }
-            for name, cfg in settings.marketplaces.items()
+        "open_positions": trading.open_positions,
+        "realized_pnl_ton": round(trading.realized_pnl_ton, 3),
+        "unrealized_pnl_ton": round(trading.unrealized_pnl_ton, 3),
+        "invested_ton": round(trading.invested_ton, 3),
+        "signals_pending": pending or 0,
+        "data": {
+            "collections_tracked": collections or 0,
+            "sales_recorded": sales or 0,
         },
+        "engine": engine.status(),
+        "marketplaces": marketplaces,
     }
