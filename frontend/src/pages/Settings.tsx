@@ -221,12 +221,52 @@ export default function Settings() {
 
           <div className="card lg:col-span-2">
             <h2 className="mb-1 text-sm font-medium text-slate-300">Комиссии площадок</h2>
-            <p className="mb-4 text-xs text-slate-500">
+            <p className="mb-4 text-xs leading-relaxed text-slate-500">
               Указаны долей: 0.05 = 5%. Комиссия MRKT подтверждена записью
               трафика — 2%, и берётся она с покупателя сверх цены продавца.
-              Остальные площадки подключены только как источник цен для
-              сверки, торговля на них не ведётся.
+              <br />
+              Portals и GetGems выключены: их адреса не восстановлены и на
+              практике неверны, включёнными они дают только ошибки в журнале.
+              Включайте после того, как импорт HAR подставит рабочие пути —
+              тогда заработает кросс-маркет сверка.
             </p>
+
+            <div className="mb-4 space-y-2">
+              {MARKETS.map((market) => {
+                const cfg = config.data!.marketplaces[market.key]
+                if (!cfg) return null
+                return (
+                  <div
+                    key={market.key}
+                    className="flex items-center justify-between rounded-lg bg-ink-700 px-4 py-2.5"
+                  >
+                    <div className="text-sm text-slate-300">
+                      {market.label}
+                      <span className="ml-2 text-xs text-slate-500">
+                        {cfg.trade_enabled
+                          ? 'торговля'
+                          : cfg.enabled
+                            ? 'цены для сверки'
+                            : 'выключена'}
+                      </span>
+                    </div>
+                    <Button
+                      variant={cfg.enabled ? 'default' : 'primary'}
+                      onClick={() =>
+                        void patch({
+                          marketplaces: {
+                            ...config.data!.marketplaces,
+                            [market.key]: { ...cfg, enabled: !cfg.enabled },
+                          },
+                        })
+                      }
+                    >
+                      {cfg.enabled ? 'Выключить' : 'Включить'}
+                    </Button>
+                  </div>
+                )
+              })}
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {MARKETS.map((market) => (
                 <Field

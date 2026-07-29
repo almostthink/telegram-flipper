@@ -102,3 +102,49 @@ def test_cookie_string_is_stored_verbatim():
     """Строку cookie нельзя ни обрезать, ни дополнять префиксом."""
     cookie = "AUTH_TOKEN=abc; JWT_TOKEN=eyJhbGciOiJIUzI1NiJ9.x.y"
     assert normalize_header(Market.GETGEMS, cookie) == cookie
+
+
+# --- Строка cookie -------------------------------------------------------
+
+#: Форма реальной строки GetGems: две трети — счётчики аналитики.
+GETGEMS_COOKIE = (
+    "_ga=GA1.1.111; _ym_uid=222; _ym_d=333; _ym_isad=2; "
+    "_kLp7Zy9X=00000000-0000-4000-8000-000000000000; "
+    "AUTH_TOKEN=secret1; JWT_TOKEN=secret2; _ga_ABC123=GS2.1.s444"
+)
+
+
+def test_analytics_cookies_are_stripped():
+    """Счётчики Google и Яндекса площадке не нужны и уходить не должны."""
+    from app.auth.tma import clean_cookie_string
+
+    cleaned = clean_cookie_string(GETGEMS_COOKIE)
+
+    assert "AUTH_TOKEN=secret1" in cleaned
+    assert "JWT_TOKEN=secret2" in cleaned
+    for tracker in ("_ga=", "_ym_uid=", "_ym_d=", "_ym_isad=", "_ga_ABC123="):
+        assert tracker not in cleaned
+
+
+def test_unknown_cookies_are_preserved():
+    """Незнакомое имя может оказаться сессионным — терять его нельзя."""
+    from app.auth.tma import clean_cookie_string
+
+    cleaned = clean_cookie_string(GETGEMS_COOKIE)
+    assert "_kLp7Zy9X=00000000-0000-4000-8000-000000000000" in cleaned
+
+
+def test_getgems_cookie_is_cleaned_on_save():
+    assert normalize_header(Market.GETGEMS, GETGEMS_COOKIE).count(";") == 2
+
+
+def test_cookie_of_only_analytics_is_rejected():
+    with pytest.raises(ValueError, match="аналитики"):
+        normalize_header(Market.GETGEMS, "_ga=GA1.1.111; _ym_d=333")
+
+
+def test_auth_cookie_detection():
+    from app.auth.tma import has_auth_cookie
+
+    assert has_auth_cookie(GETGEMS_COOKIE)
+    assert not has_auth_cookie("_ga=GA1.1.111; theme=dark")

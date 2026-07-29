@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.adapters import registry
 from app.adapters.har import parse_har
-from app.auth.tma import auth
+from app.auth.tma import COOKIE_MARKETS, auth, has_auth_cookie
 from app.auth.vault import vault
 from app.domain import Market
 
@@ -63,7 +63,20 @@ async def set_token(request: TokenRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return {"ok": True, "detail": f"Токен {market.value} сохранён"}
+    saved = auth.get(market) or ""
+    detail = f"Токен {market.value} сохранён"
+
+    if market in COOKIE_MARKETS:
+        # Молча принять строку без токена — значит обречь пользователя
+        # ловить непонятные 401 вместо ясного сообщения сейчас.
+        if not has_auth_cookie(saved):
+            detail += ". Внимание: в строке не видно AUTH_TOKEN или JWT_TOKEN — "
+            detail += "проверьте, что скопирован весь заголовок Cookie"
+        removed = len(request.token.split(";")) - len(saved.split(";"))
+        if removed > 0:
+            detail += f". Убрано счётчиков аналитики: {removed}"
+
+    return {"ok": True, "detail": detail}
 
 
 @router.delete("/auth/token/{market_name}")

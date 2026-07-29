@@ -58,6 +58,55 @@ KNOWN_SCHEMES = ("tma ", "bearer ", "basic ", "token ")
 #: Параметры, по которым узнаётся сырой initData Telegram.
 INIT_DATA_MARKERS = ("hash=", "auth_date=")
 
+#: Площадки, у которых учётные данные лежат в cookie.
+COOKIE_MARKETS = {Market.GETGEMS}
+
+#: Аналитика в строке cookie. Отправлять её незачем: к авторизации она не
+#: относится, зато переносит идентификаторы отслеживания в каждый запрос.
+TRACKING_COOKIE_PREFIXES = (
+    "_ga",
+    "_gid",
+    "_gat",
+    "_ym_",
+    "_fbp",
+    "_fbc",
+    "_hj",
+    "amplitude",
+    "mp_",
+    "intercom-",
+)
+
+#: Имена, по которым видно, что в строке действительно есть авторизация.
+AUTH_COOKIE_MARKERS = ("auth_token", "jwt_token", "token", "session")
+
+
+def clean_cookie_string(value: str) -> str:
+    """Убираем из строки cookie всё, что не относится к авторизации.
+
+    Пользователь копирует заголовок целиком, и туда попадает аналитика
+    Google и Яндекса. Площадке она не нужна и лишь тащит идентификаторы
+    отслеживания в каждый наш запрос.
+
+    Убираем только заведомо известные счётчики: неизвестное имя вполне
+    может оказаться сессионным, и терять его нельзя.
+    """
+    kept: list[str] = []
+    for chunk in value.split(";"):
+        item = chunk.strip()
+        if not item:
+            continue
+        name = item.split("=", 1)[0].strip().lower()
+        if any(name.startswith(prefix) for prefix in TRACKING_COOKIE_PREFIXES):
+            continue
+        kept.append(item)
+    return "; ".join(kept)
+
+
+def has_auth_cookie(value: str) -> bool:
+    """Есть ли в строке хоть что-то похожее на токен авторизации."""
+    lowered = value.lower()
+    return any(f"{marker}=" in lowered for marker in AUTH_COOKIE_MARKERS)
+
 
 def looks_like_init_data(value: str) -> bool:
     """Похоже ли значение на сырой initData Telegram."""
@@ -76,6 +125,13 @@ def normalize_header(market: Market, header_value: str) -> str:
     token = header_value.strip()
     if not token:
         raise ValueError("Пустой токен")
+
+    if market in COOKIE_MARKETS:
+        # Учётные данные лежат в cookie: чистим от аналитики и отдаём.
+        cleaned = clean_cookie_string(token)
+        if not cleaned:
+            raise ValueError("В строке cookie не осталось ничего, кроме аналитики")
+        return cleaned
 
     lowered = token.lower()
     if any(lowered.startswith(scheme) for scheme in KNOWN_SCHEMES):

@@ -157,17 +157,23 @@ class Settings(BaseSettings):
     sell: SellStrategy = Field(default_factory=SellStrategy)
     marketplaces: dict[str, MarketplaceConfig] = Field(
         default_factory=lambda: {
-            # Portals — только источник цен для сверки. Торговля ведётся
-            # исключительно на MRKT: её схема подтверждена записью трафика,
-            # а пути Portals остались предположением, и покупать вслепую
-            # по неподтверждённому API нельзя.
-            "portals": MarketplaceConfig(enabled=True, trade_enabled=False, fee_sell=0.05),
-            # MRKT: подтверждено salePrice / salePriceWithoutFee = 1.02.
+            # MRKT — единственная подтверждённая площадка: пути и схема
+            # ответов восстановлены из записи трафика, комиссия проверена
+            # (salePrice / salePriceWithoutFee = 1.02 на всех лотах).
             "mrkt": MarketplaceConfig(
                 enabled=True, trade_enabled=True, fee_sell=1 - 1 / 1.02
             ),
-            # Только сверка цен — торговлю не ведём.
-            "getgems": MarketplaceConfig(enabled=True, trade_enabled=False),
+            # Portals и GetGems выключены по умолчанию.
+            #
+            # Их адреса — предположение, и на практике оба неверны: у
+            # GetGems /public/api/v1/collections отдаёт 404, домен Portals
+            # не разрешается вовсе. Включённые, они дают не данные для
+            # сверки, а поток ошибок в журнале каждые пять минут.
+            #
+            # Включайте после того, как импорт HAR подставит рабочие пути:
+            # тогда кросс-маркет сверка заработает по-настоящему.
+            "portals": MarketplaceConfig(enabled=False, trade_enabled=False, fee_sell=0.05),
+            "getgems": MarketplaceConfig(enabled=False, trade_enabled=False),
         }
     )
 

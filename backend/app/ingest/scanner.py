@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 
 from app.adapters import registry
@@ -32,6 +33,15 @@ log = logging.getLogger(__name__)
 DEEP_SCAN_COLLECTIONS = 25
 #: Максимум листингов на коллекцию — дальше цены уже не флип-зона.
 LISTINGS_PER_COLLECTION = 100
+
+#: После скольких неудач подряд площадка уходит на паузу. Неверный адрес
+#: или упавший сервис не чинятся повторением запроса: сканер лишь копит
+#: таймауты и засоряет журнал одной и той же ошибкой каждые пять минут.
+FAILURE_THRESHOLD = 3
+
+#: Пауза растёт с числом неудач и упирается в потолок. Сетевой сбой
+#: пройдёт сам, поэтому площадка возвращается в работу без вмешательства.
+BACKOFF_MINUTES = (15, 30, 60, 120)
 
 
 @dataclass
@@ -54,13 +64,27 @@ class ScanStats:
         self.errors.extend(other.errors)
 
 
+@dataclass
+class MarketHealth:
+    """Состояние площадки: сколько раз подряд не отвечала и до когда молчим."""
+
+    failures: int = 0
+    paused_until: float = 0.0
+    reason: str = ""
+    #: Пауза до вмешательства человека: сеть тут не поможет, нужен токен.
+    needs_attention: bool = False
+
+    def is_paused(self, now: float) -> bool:
+        return self.needs_attention or now < self.paused_until
+
+
 class Scanner:
     """Опрос площадок и запись наблюдений в базу."""
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.last_stats = ScanStats()
-        self._disabled: dict[Market, str] = {}
+        self._health: dict[Market, MarketHealth] = {}
 
     # --- Широкая петля ---------------------------------------------------
 
@@ -74,18 +98,17 @@ class Scanner:
                     floors = await adapter.collection_floors()
                 async with session_scope() as session:
                     stats.floors += await repo.record_floors(session, floors)
-                self._disabled.pop(market, None)
+                self._note_success(market)
             except AuthExpired as exc:
                 await self._handle_auth_expired(market, exc, stats)
             except MarketplaceError as exc:
-                stats.errors.append(f"{market.value}: {exc}")
-                log.warning("Сбор флоров %s не удался: %s", market.value, exc)
+                self._note_failure(market, str(exc), stats)
 
         await asyncio.gather(
             *(
                 one(market, adapter)
                 for market, adapter in adapters.items()
-                if market not in self._disabled
+                if not self._is_paused(market)
             )
         )
         self.last_stats = stats
@@ -106,18 +129,17 @@ class Scanner:
 
         adapters = registry.build_enabled(self.settings)
         for market, adapter in adapters.items():
-            if market in self._disabled:
+            if self._is_paused(market):
                 continue
             try:
                 async with adapter:
                     for collection in collections:
                         stats.merge(await self._scan_one(adapter, collection))
-                self._disabled.pop(market, None)
+                self._note_success(market)
             except AuthExpired as exc:
                 await self._handle_auth_expired(market, exc, stats)
             except MarketplaceError as exc:
-                stats.errors.append(f"{market.value}: {exc}")
-                log.warning("Глубокое сканирование %s не удалось: %s", market.value, exc)
+                self._note_failure(market, str(exc), stats)
 
         self.last_stats = stats
         log.info(
@@ -195,12 +217,58 @@ class Scanner:
             stats.errors.append(f"{market.value}: токен обновлён, повтор на следующем проходе")
             return
 
-        self._disabled[market] = "требуется новый токен"
+        health = self._health.setdefault(market, MarketHealth())
+        health.needs_attention = True
+        health.reason = "требуется новый токен"
         stats.errors.append(f"{market.value}: нужен новый токен — задайте его в Настройках")
+
+    # --- Учёт состояния площадок -----------------------------------------
+
+    def _is_paused(self, market: Market) -> bool:
+        health = self._health.get(market)
+        return health is not None and health.is_paused(time.time())
+
+    def _note_success(self, market: Market) -> None:
+        self._health.pop(market, None)
+
+    def _note_failure(self, market: Market, detail: str, stats: ScanStats) -> None:
+        """Считаем неудачу и при необходимости отправляем площадку на паузу.
+
+        Ошибка логируется на каждой попытке до порога и ровно один раз при
+        уходе на паузу. Иначе неверный адрес превращается в бесконечную
+        череду одинаковых предупреждений каждые пять минут.
+        """
+        health = self._health.setdefault(market, MarketHealth())
+        health.failures += 1
+        health.reason = detail
+        stats.errors.append(f"{market.value}: {detail}")
+
+        if health.failures < FAILURE_THRESHOLD:
+            log.warning("Опрос %s не удался (%d): %s", market.value, health.failures, detail)
+            return
+
+        index = min(health.failures - FAILURE_THRESHOLD, len(BACKOFF_MINUTES) - 1)
+        minutes = BACKOFF_MINUTES[index]
+        health.paused_until = time.time() + minutes * 60
+        log.warning(
+            "%s не отвечает %d раз подряд — пауза на %d мин. Последняя ошибка: %s",
+            market.value, health.failures, minutes, detail,
+        )
 
     @property
     def disabled_markets(self) -> dict[str, str]:
-        return {market.value: reason for market, reason in self._disabled.items()}
+        """Площадки на паузе и причина — уходит в интерфейс."""
+        now = time.time()
+        result: dict[str, str] = {}
+        for market, health in self._health.items():
+            if not health.is_paused(now):
+                continue
+            if health.needs_attention:
+                result[market.value] = health.reason
+            else:
+                left = max(int((health.paused_until - now) / 60), 1)
+                result[market.value] = f"{health.reason} (пауза ещё {left} мин)"
+        return result
 
     def reset_disabled(self) -> None:
-        self._disabled.clear()
+        self._health.clear()
