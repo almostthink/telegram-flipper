@@ -160,6 +160,9 @@ async def import_har(market_name: str, file: UploadFile = File(...)) -> dict:
         "ok": True,
         "base_url": result.base_url,
         "token_saved": token_saved,
+        # Фильтр по имени площадки не сработал, адреса взяты с другого
+        # домена — стоит убедиться глазами, что это действительно её API.
+        "matched_by_fallback": result.matched_by_fallback,
         "found": [
             {
                 "endpoint": item.endpoint,

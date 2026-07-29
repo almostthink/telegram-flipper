@@ -113,3 +113,45 @@ def test_result_merges_over_defaults():
     assert merged.endpoints["listings"].path == "/v9/gifts"
     # Незатронутые эндпоинты остаются от значений по умолчанию.
     assert merged.endpoints["balance"].path == DEFAULT_ENDPOINTS.endpoints["balance"].path
+
+
+def test_falls_back_when_host_filter_matches_nothing():
+    """API площадки может жить на домене без её имени в адресе.
+
+    Молча возвращать «ничего не найдено» в такой ситуации нельзя —
+    пользователь не поймёт, что фильтр по домену и есть причина.
+    """
+    document = har(
+        entry("https://api.tg-gifts-backend.io/v1/gifts", body={"items": [{"id": "1"}]}),
+        entry("https://web.telegram.org/api/collections", body={"data": [{"x": 1}]}),
+    )
+    result = parse_har(document, host_filter="mrkt")
+
+    assert result.matched_by_fallback is True
+    assert result.base_url == "https://api.tg-gifts-backend.io"
+    # Инфраструктурные домены в выдачу попадать не должны.
+    assert all("telegram.org" not in item.base_url for item in result.findings)
+
+
+def test_error_lists_seen_hosts_to_explain_failure():
+    document = har(entry("https://cdn.example.com/config", body={"theme": "dark"}))
+    with pytest.raises(ValueError) as exc:
+        parse_har(document, host_filter="mrkt")
+
+    # В сообщении должно быть видно, куда парсер вообще смотрел.
+    assert "cdn.example.com" in str(exc.value)
+
+
+def test_filter_still_wins_when_it_matches():
+    """Фолбэк не должен срабатывать, если по фильтру что-то нашлось."""
+    document = har(
+        entry("https://api.mrkt.xyz/v1/gifts", body={"items": [{"id": "1"}]}),
+        entry(
+            "https://other.example.com/v1/gifts",
+            body={"items": [{"id": str(i)} for i in range(50)]},
+        ),
+    )
+    result = parse_har(document, host_filter="mrkt")
+
+    assert result.matched_by_fallback is False
+    assert result.base_url == "https://api.mrkt.xyz"

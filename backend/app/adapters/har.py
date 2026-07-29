@@ -38,6 +38,23 @@ CLASSIFIERS: list[tuple[str, tuple[str, ...]]] = [
 #: Ключи, под которыми в ответе обычно лежит массив данных.
 ARRAY_KEYS = ("results", "items", "data", "nfts", "gifts", "list", "activities", "collections")
 
+#: Инфраструктурные домены: сам Telegram, CDN, аналитика. Их ответы никогда
+#: не относятся к API площадки и только зашумляют выдачу.
+NOISE_HOSTS = (
+    "telegram.org",
+    "telegram-cdn",
+    "t.me",
+    "google",
+    "gstatic",
+    "doubleclick",
+    "sentry.io",
+    "amplitude",
+    "analytics",
+    "cloudflareinsights",
+    "hotjar",
+    "intercom",
+)
+
 
 @dataclass(slots=True)
 class HarFinding:
@@ -57,6 +74,12 @@ class HarImportResult:
     findings: list[HarFinding] = field(default_factory=list)
     auth_header: str | None = None
     skipped: int = 0
+    #: Домены, отдавшие JSON. Показываем их, когда ничего не распознали —
+    #: по ним видно, туда ли вообще смотрел парсер.
+    seen_hosts: set[str] = field(default_factory=set)
+    #: Эндпоинты найдены только после отключения фильтра по домену:
+    #: адрес API площадки не содержит её имени, стоит проверить глазами.
+    matched_by_fallback: bool = False
 
     def to_endpoints(self, fallback: MarketEndpoints) -> MarketEndpoints:
         """Накладываем найденное поверх текущей конфигурации."""
@@ -110,7 +133,13 @@ def parse_har(raw: bytes | str, *, host_filter: str | None = None) -> HarImportR
     """Разбираем HAR и достаём из него эндпоинты площадки.
 
     ``host_filter`` — подстрока домена (например ``mrkt``), чтобы отсеять
-    запросы к аналитике, CDN и телеграмовским сервисам.
+    аналитику, CDN и телеграмовские сервисы.
+
+    Если по фильтру ничего не нашлось, разбираем повторно без него, отбросив
+    только заведомо посторонние домены. Площадка вполне может держать API на
+    домене, в имени которого её названия нет, и молча возвращать «ничего не
+    найдено» в такой ситуации неприемлемо: пользователь не поймёт, что
+    именно пошло не так.
     """
     try:
         document = json.loads(raw)
@@ -121,6 +150,33 @@ def parse_har(raw: bytes | str, *, host_filter: str | None = None) -> HarImportR
     if not isinstance(entries, list):
         raise ValueError("В HAR нет раздела log.entries")
 
+    result = _scan_entries(entries, host_filter=host_filter)
+    seen_hosts = set(result.seen_hosts)
+
+    if not result.findings and host_filter:
+        log.info("По фильтру '%s' ничего не найдено — повторяю без него", host_filter)
+        fallback = _scan_entries(entries, host_filter=None)
+        # Домены копим из обоих проходов: отфильтрованный мог не увидеть
+        # ничего, и именно они объясняют пользователю причину неудачи.
+        seen_hosts |= fallback.seen_hosts
+        if fallback.findings:
+            fallback.matched_by_fallback = True
+            return fallback
+
+    if not result.findings:
+        hosts = ", ".join(sorted(seen_hosts)[:8]) or "нет JSON-ответов вовсе"
+        raise ValueError(
+            "В HAR не найдено ни одного подходящего JSON-запроса. "
+            "Убедитесь, что запись велась при открытом мини-аппе, что вы "
+            "пролистали список подарков и что HAR сохранён вместе с телами "
+            f"ответов. Домены в файле: {hosts}"
+        )
+
+    return result
+
+
+def _scan_entries(entries: list, *, host_filter: str | None) -> HarImportResult:
+    """Один проход по записям HAR с заданным фильтром домена."""
     result = HarImportResult()
     best: dict[str, HarFinding] = {}
     host_counts: dict[str, int] = {}
@@ -133,9 +189,16 @@ def parse_har(raw: bytes | str, *, host_filter: str | None = None) -> HarImportR
             continue
 
         parsed = urlparse(url)
-        if host_filter and host_filter.lower() not in parsed.netloc.lower():
-            continue
+        host = parsed.netloc.lower()
         if not parsed.path or parsed.path == "/":
+            continue
+
+        if host_filter:
+            if host_filter.lower() not in host:
+                continue
+        elif any(noise in host for noise in NOISE_HOSTS):
+            # Без фильтра отсекаем инфраструктуру: сам Telegram, CDN,
+            # аналитику. Иначе в выдачу попадут их служебные ответы.
             continue
 
         # Статику и не-JSON пропускаем: нас интересует только API.
@@ -143,6 +206,8 @@ def parse_har(raw: bytes | str, *, host_filter: str | None = None) -> HarImportR
         if "json" not in mime.lower():
             result.skipped += 1
             continue
+
+        result.seen_hosts.add(host)
 
         if result.auth_header is None:
             result.auth_header = _extract_auth(request.get("headers"))
@@ -179,24 +244,17 @@ def parse_har(raw: bytes | str, *, host_filter: str | None = None) -> HarImportR
         if current is None or candidate.sample_count > current.sample_count:
             best[endpoint] = candidate
 
-    if not best:
-        raise ValueError(
-            "В HAR не найдено ни одного подходящего JSON-запроса. "
-            "Убедитесь, что запись велась при открытом мини-аппе и вы "
-            "пролистали список подарков."
-        )
+    if best:
+        result.findings = sorted(best.values(), key=lambda f: f.endpoint)
+        result.base_url = max(host_counts, key=lambda k: host_counts[k])
 
-    result.findings = sorted(best.values(), key=lambda f: f.endpoint)
-    result.base_url = max(host_counts, key=lambda k: host_counts[k])
-
-    # Пути в конфиге относительны base_url — убираем общий префикс хоста.
-    for finding in result.findings:
-        if finding.base_url != result.base_url:
-            log.warning(
-                "Эндпоинт %s найден на другом хосте (%s) — проверьте вручную",
-                finding.endpoint,
-                finding.base_url,
-            )
+        for finding in result.findings:
+            if finding.base_url != result.base_url:
+                log.warning(
+                    "Эндпоинт %s найден на другом хосте (%s) — проверьте вручную",
+                    finding.endpoint,
+                    finding.base_url,
+                )
     return result
 
 

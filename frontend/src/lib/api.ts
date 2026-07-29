@@ -308,6 +308,7 @@ export const api = {
       ok: boolean
       base_url: string
       token_saved: boolean
+      matched_by_fallback: boolean
       found: { endpoint: string; path: string; method: string; records_in_sample: number }[]
       skipped: number
     }>(`/endpoints/${market}/import-har`, { method: 'POST', body: form })

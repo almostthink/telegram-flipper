@@ -381,13 +381,50 @@ function HarCard({
   return (
     <div className="card">
       <h2 className="mb-1 text-sm font-medium text-slate-300">Импорт эндпоинтов из HAR</h2>
-      <p className="mb-4 text-xs leading-relaxed text-slate-500">
-        У MRKT и Portals нет официального API, и адреса запросов меняются. Откройте
-        мини-апп в браузере, полистайте список подарков, сохраните HAR
-        (DevTools → Network → Export HAR) и загрузите сюда — приложение восстановит
-        реальные пути и заголовок авторизации. Файл разбирается локально и не
-        сохраняется.
+      <p className="mb-3 text-xs leading-relaxed text-slate-500">
+        У MRKT и Portals нет официального API, и адреса запросов меняются. HAR —
+        это запись сетевых запросов браузера: из неё приложение достанет реальные
+        пути и заголовок авторизации. Файл разбирается локально и не сохраняется.
       </p>
+
+      <ol className="mb-4 space-y-1.5 text-xs leading-relaxed text-slate-400">
+        <li>
+          <span className="text-slate-500">1.</span> Откройте{' '}
+          <span className="font-mono text-slate-300">web.telegram.org/k/</span> в Chrome
+          или Edge и войдите в аккаунт. Мобильное приложение не подойдёт — нужны
+          инструменты разработчика.
+        </li>
+        <li>
+          <span className="text-slate-500">2.</span> Найдите бота площадки и запустите
+          мини-апп. Нажмите <span className="font-mono text-slate-300">F12</span> →
+          вкладка <span className="font-mono text-slate-300">Network</span>, включите{' '}
+          <span className="font-mono text-slate-300">Preserve log</span>, фильтр{' '}
+          <span className="font-mono text-slate-300">Fetch/XHR</span>.
+        </li>
+        <li>
+          <span className="text-slate-500">3.</span> Пройдите по разделам: список
+          коллекций → конкретная коллекция → прокрутите лоты → фильтр по модели →
+          история сделок → профиль с балансом. Каждое действие даёт свой эндпоинт.
+        </li>
+        <li>
+          <span className="text-slate-500">4.</span> Правый клик в списке запросов →{' '}
+          <span className="font-mono text-slate-300">Save all as HAR with content</span>.
+          В новых версиях Chrome выберите{' '}
+          <span className="text-warn">Export HAR (with sensitive data)</span> — вариант
+          «sanitized» вырезает заголовок авторизации и тела ответов, из такого файла
+          ничего не восстановить.
+        </li>
+        <li>
+          <span className="text-slate-500">5.</span> Загрузите файл кнопкой ниже.
+        </li>
+      </ol>
+
+      <div className="mb-4">
+        <Alert tone="warn">
+          HAR содержит токен вашей сессии — обращайтесь с ним как с паролем и никому
+          не пересылайте.
+        </Alert>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -418,6 +455,15 @@ function HarCard({
 
       {result && (
         <div className="mt-4 space-y-1 rounded-lg bg-ink-700 p-3 text-xs">
+          {result.matched_by_fallback && (
+            <div className="mb-2">
+              <Alert tone="warn">
+                Запросов с именем площадки в домене не нашлось — адреса взяты с{' '}
+                {result.base_url}. Проверьте, что это действительно её API, а не
+                сторонний сервис.
+              </Alert>
+            </div>
+          )}
           <div className="mb-2 text-slate-400">Базовый адрес: {result.base_url}</div>
           {result.found.map((item) => (
             <div key={item.endpoint} className="flex justify-between font-mono text-slate-500">
