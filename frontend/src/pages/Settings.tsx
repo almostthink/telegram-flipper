@@ -407,19 +407,29 @@ function HarCard({
           история сделок → профиль с балансом. Каждое действие даёт свой эндпоинт.
         </li>
         <li>
-          <span className="text-slate-500">4.</span> Правый клик в списке запросов →{' '}
+          <span className="text-slate-500">4.</span> Правый клик в таблице запросов →{' '}
           <span className="font-mono text-slate-300">Save all as HAR with content</span>.
-          В новых версиях Chrome выберите{' '}
-          <span className="text-warn">Export HAR (with sensitive data)</span> — вариант
-          «sanitized» вырезает заголовок авторизации и тела ответов, из такого файла
-          ничего не восстановить.
+          Если DevTools предложит два варианта, берите{' '}
+          <span className="font-mono text-slate-300">with sensitive data</span>:
+          «sanitized» вырезает заголовок авторизации. Одного пункта в меню тоже
+          достаточно — он и есть полный.
         </li>
         <li>
           <span className="text-slate-500">5.</span> Загрузите файл кнопкой ниже.
+          Импорт можно повторять: новые пути накладываются поверх сохранённых,
+          остальные остаются как были.
         </li>
       </ol>
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-2">
+        <Alert tone="info">
+          Урезанный HAR тоже подойдёт. Пути эндпоинтов восстанавливаются и без тел
+          ответов — они нужны лишь для автоопределения того, где в JSON лежит
+          массив, а адаптер находит его и по типичным именам полей. Если в файле
+          не окажется токена, вставьте его отдельно в блоке выше: в DevTools
+          откройте любой запрос → Headers → Request Headers → правый клик по{' '}
+          <span className="font-mono">Authorization</span> → Copy value.
+        </Alert>
         <Alert tone="warn">
           HAR содержит токен вашей сессии — обращайтесь с ним как с паролем и никому
           не пересылайте.
