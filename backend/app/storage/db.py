@@ -59,8 +59,81 @@ async def session_scope() -> AsyncIterator[AsyncSession]:
 async def init_db() -> None:
     engine = get_engine()
     async with engine.begin() as conn:
+        # create_all создаёт только отсутствующие таблицы и никогда не
+        # трогает существующие. Поэтому сразу за ним идёт добавление
+        # недостающих колонок — иначе база, созданная прошлой версией,
+        # роняет запросы с «no such column».
         await conn.run_sync(Base.metadata.create_all)
+        added = await _add_missing_columns(conn)
+
+    if added:
+        log.info("Схема обновлена, добавлены колонки: %s", ", ".join(added))
     log.info("База готова: %s", paths.db_path())
+
+
+async def _add_missing_columns(conn) -> list[str]:
+    """Достраиваем таблицы под текущую модель данных.
+
+    Полноценный инструмент миграций (Alembic) здесь избыточен: приложение
+    однопользовательское, а колонки только добавляются. Зато этот проход
+    универсален — новые поля в моделях подхватываются сами, и добавление
+    очередного признака не требует ни ручного скрипта, ни удаления базы.
+
+    Накопленная история — самый ценный актив приложения: без неё не
+    откалибровать модель цены. Терять её при обновлении недопустимо.
+    """
+    added: list[str] = []
+
+    for table in Base.metadata.sorted_tables:
+        result = await conn.exec_driver_sql(f"PRAGMA table_info({table.name})")
+        existing = {row[1] for row in result.fetchall()}
+        if not existing:
+            continue  # таблицы не было — её только что создал create_all
+
+        for column in table.columns:
+            if column.name in existing:
+                continue
+
+            definition = _column_ddl(column, conn.dialect)
+            if definition is None:
+                log.warning(
+                    "Колонку %s.%s нельзя добавить автоматически — "
+                    "она обязательна и без значения по умолчанию",
+                    table.name, column.name,
+                )
+                continue
+
+            await conn.exec_driver_sql(
+                f"ALTER TABLE {table.name} ADD COLUMN {definition}"
+            )
+            added.append(f"{table.name}.{column.name}")
+
+    return added
+
+
+def _column_ddl(column, dialect) -> str | None:
+    """Описание колонки для ALTER TABLE.
+
+    SQLite запрещает добавлять NOT NULL без значения по умолчанию: старым
+    строкам нечем заполнить поле. Такие колонки пропускаем и сообщаем —
+    молча потерять поле хуже, чем не добавить его.
+    """
+    type_sql = column.type.compile(dialect=dialect)
+    default = getattr(column.default, "arg", None) if column.default is not None else None
+
+    if default is None and not column.nullable:
+        return None
+
+    parts = [column.name, type_sql]
+    if default is not None and not callable(default):
+        if isinstance(default, bool):
+            parts.append(f"DEFAULT {1 if default else 0}")
+        elif isinstance(default, int | float):
+            parts.append(f"DEFAULT {default}")
+        elif isinstance(default, str):
+            escaped = default.replace("'", "''")
+            parts.append(f"DEFAULT '{escaped}'")
+    return " ".join(parts)
 
 
 async def dispose_db() -> None:

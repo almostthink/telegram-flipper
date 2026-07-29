@@ -58,6 +58,24 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
+    @app.exception_handler(Exception)
+    async def unhandled_error(request, exc: Exception):
+        """Понятный ответ вместо голого «500 Internal Server Error».
+
+        Приложение локальное и однопользовательское, так что показать
+        причину прямо в интерфейсе безопаснее, чем заставлять человека
+        искать её в логах. Полная трассировка при этом всё равно пишется
+        в файл — по ней видно место падения.
+        """
+        log.exception("Ошибка обработки %s %s", request.method, request.url.path)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": f"{type(exc).__name__}: {exc}",
+                "hint": f"Подробности в {paths.log_dir() / 'flipper.log'}",
+            },
+        )
+
     for router in (
         routes_system.router,
         routes_market.router,

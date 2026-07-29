@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 
-from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace
+from app.adapters.base import AuthPlacement, EndpointSpec, MarketEndpoints, Marketplace
 from app.adapters.parsing import as_list, parse_gift, pick, to_datetime, to_ton
 from app.domain import CollectionFloor, Listing, Market
 
@@ -84,6 +84,11 @@ class ReadOnlyAdapter(Marketplace):
 
 class GetGemsAdapter(ReadOnlyAdapter):
     name = Market.GETGEMS
+    #: Заголовка Authorization у GetGems нет: сессия живёт в cookie
+    #: AUTH_TOKEN и JWT_TOKEN. Публичные цены обычно доступны и без них,
+    #: но если площадка потребует вход, вставленная строка cookie уйдёт
+    #: в нужный заголовок, а не в игнорируемый Authorization.
+    auth_placement = AuthPlacement.COOKIE
 
     def __init__(self, *args, **kwargs) -> None:
         kwargs.setdefault("endpoints", GETGEMS_ENDPOINTS)

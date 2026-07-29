@@ -16,6 +16,7 @@ import logging
 import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 import httpx
@@ -115,12 +116,26 @@ class RateLimiter:
             self._last = loop.time()
 
 
+class AuthPlacement(StrEnum):
+    """Куда площадка ждёт учётные данные.
+
+    Единой схемы нет, и подставлять всем Authorization неверно: GetGems
+    держит сессию в cookie (AUTH_TOKEN и JWT_TOKEN), и заголовок
+    авторизации там попросту игнорируется.
+    """
+
+    HEADER = "header"
+    COOKIE = "cookie"
+
+
 class Marketplace(ABC):
     """Площадка. Чтение обязательно, торговля — только там, где разрешена."""
 
     name: Market
     #: Умеет ли адаптер покупать и продавать, а не только читать цены.
     supports_trading: bool = False
+    #: Куда класть учётные данные. Переопределяется в адаптере площадки.
+    auth_placement: AuthPlacement = AuthPlacement.HEADER
 
     def __init__(
         self,
@@ -162,14 +177,18 @@ class Marketplace(ABC):
             await self._client.aclose()
             self._client = None
 
+    @property
+    def _auth_header_name(self) -> str:
+        return "Cookie" if self.auth_placement is AuthPlacement.COOKIE else "Authorization"
+
     def set_auth(self, header_value: str | None) -> None:
         """Обновляем токен без пересоздания клиента."""
         self.auth_header = header_value
         if self._client is not None:
             if header_value:
-                self._client.headers["Authorization"] = header_value
+                self._client.headers[self._auth_header_name] = header_value
             else:
-                self._client.headers.pop("Authorization", None)
+                self._client.headers.pop(self._auth_header_name, None)
 
     def _default_headers(self) -> dict[str, str]:
         headers = {
@@ -182,7 +201,7 @@ class Marketplace(ABC):
             ),
         }
         if self.auth_header:
-            headers["Authorization"] = self.auth_header
+            headers[self._auth_header_name] = self.auth_header
         return headers
 
     # --- Транспорт ------------------------------------------------------

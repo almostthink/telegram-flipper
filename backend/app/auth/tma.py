@@ -1,9 +1,15 @@
-"""Получение и обновление tma-токена площадок.
+"""Получение и обновление токенов площадок.
 
-Мини-аппы Telegram авторизуют запросы заголовком ``tma <initData>``.
-initData выдаёт сам Telegram при открытии мини-аппа и живёт 1-7 дней.
+Telegram выдаёт мини-аппу строку initData, и дальше площадки расходятся:
 
-Два способа его получить:
+* **Portals** принимает её напрямую — ``Authorization: tma <initData>``.
+* **MRKT** меняет initData на собственный токен через POST /api/v1/auth и
+  дальше ждёт его **без всякого префикса**: по записи трафика это UUID из
+  36 символов. Дописать «tma» здесь означает сломать авторизацию.
+
+Поэтому схема выбирается по площадке, а не применяется одна на всех.
+
+Два способа получить доступ:
 
 1. **Вручную** — скопировать заголовок Authorization из DevTools. Ничего
    не знает об аккаунте, но раз в несколько дней придётся повторять.
@@ -35,6 +41,51 @@ MINI_APPS: dict[Market, tuple[str, str]] = {
 #: Считаем токен протухшим заранее, чтобы не ловить 401 в момент сделки.
 REFRESH_MARGIN_SEC = 6 * 3600
 DEFAULT_TTL_SEC = 24 * 3600
+
+#: Схемы авторизации различаются, и путать их нельзя.
+#:
+#: Portals принимает initData Telegram напрямую: ``Authorization: tma <initData>``.
+#:
+#: MRKT сначала меняет initData на собственный токен через POST /api/v1/auth
+#: и дальше ждёт этот токен без всякого префикса — по записи трафика это
+#: UUID из 36 символов. Дописывать ему «tma» означает сломать заголовок.
+TMA_MARKETS = {Market.PORTALS}
+
+#: Префиксы, при виде которых значение считается готовым заголовком и не
+#: дополняется ничем.
+KNOWN_SCHEMES = ("tma ", "bearer ", "basic ", "token ")
+
+#: Параметры, по которым узнаётся сырой initData Telegram.
+INIT_DATA_MARKERS = ("hash=", "auth_date=")
+
+
+def looks_like_init_data(value: str) -> bool:
+    """Похоже ли значение на сырой initData Telegram."""
+    lowered = value.lower()
+    return all(marker in lowered for marker in INIT_DATA_MARKERS)
+
+
+def normalize_header(market: Market, header_value: str) -> str:
+    """Приводим вставленное пользователем значение к готовому заголовку.
+
+    Раньше здесь безусловно дописывался префикс «tma», и это ломало MRKT:
+    её токен — обычный UUID без схемы, а «tma <uuid>» площадка отвергает.
+    Теперь значение трогается только тогда, когда это действительно
+    сырой initData для площадки, которая его и ждёт.
+    """
+    token = header_value.strip()
+    if not token:
+        raise ValueError("Пустой токен")
+
+    lowered = token.lower()
+    if any(lowered.startswith(scheme) for scheme in KNOWN_SCHEMES):
+        return token  # схема уже указана — не вмешиваемся
+
+    if market in TMA_MARKETS and looks_like_init_data(token):
+        return f"tma {token}"
+
+    # Всё остальное — собственный токен площадки, отдаём как есть.
+    return token
 
 
 @dataclass(slots=True)
@@ -74,13 +125,7 @@ class TmaAuth:
 
     def set_manual(self, market: Market, header_value: str) -> None:
         """Сохраняем токен, вставленный пользователем из DevTools."""
-        token = header_value.strip()
-        if not token:
-            raise ValueError("Пустой токен")
-        if not token.lower().startswith("tma "):
-            # Пользователь мог скопировать только initData без префикса.
-            token = f"tma {token}"
-
+        token = normalize_header(market, header_value)
         state = TokenState(value=token, obtained_at=time.time(), source="manual")
         self._tokens[market] = state
         vault.set(f"tma:{market.value}", token)
@@ -162,7 +207,7 @@ class TmaAuth:
             )
             init_data = _init_data_from_url(result.url)
 
-        token = f"tma {init_data}"
+        token = await self._init_data_to_header(market, init_data)
         state = TokenState(value=token, obtained_at=time.time(), source="userbot")
         self._tokens[market] = state
         vault.set(f"tma:{market.value}", token)
@@ -170,6 +215,28 @@ class TmaAuth:
         vault.set(f"tma_src:{market.value}", "userbot")
         log.info("Токен %s обновлён через userbot", market.value)
         return token
+
+    @staticmethod
+    async def _init_data_to_header(market: Market, init_data: str) -> str:
+        """Превращаем initData в готовый заголовок для конкретной площадки.
+
+        Portals принимает initData как есть. MRKT требует предварительного
+        обмена на собственный токен — без него авторизация не пройдёт,
+        сколько ни приписывай префиксов.
+        """
+        if market in TMA_MARKETS:
+            return f"tma {init_data}"
+
+        if market is Market.MRKT:
+            # Импорт внутри функции: реестр адаптеров сам зависит от этого
+            # модуля, и на верхнем уровне вышел бы цикл.
+            from app.adapters.mrkt import DEFAULT_ENDPOINTS, MrktAdapter
+
+            adapter = MrktAdapter(endpoints=DEFAULT_ENDPOINTS, fee_sell=0.0)
+            async with adapter:
+                return await adapter.exchange_init_data(init_data)
+
+        return init_data
 
     async def ensure_fresh(self, market: Market) -> str | None:
         """Обновляем токен, если он выдохся и доступен userbot-режим."""

@@ -278,10 +278,32 @@ function TokensCard({
   return (
     <div className="card">
       <h2 className="mb-1 text-sm font-medium text-slate-300">Токены площадок</h2>
-      <p className="mb-4 text-xs text-slate-500">
-        DevTools → Network → любой запрос к площадке → заголовок Authorization
-        (начинается с «tma»). Живёт 1–7 дней.
+      <p className="mb-4 text-xs leading-relaxed text-slate-500">
+        DevTools → Network → любой запрос к площадке → заголовок Authorization.
+        Вставляйте значение <span className="text-slate-300">как есть</span>:
+        схемы у площадок разные и приложение ничего не дописывает.
       </p>
+
+      <ul className="mb-4 space-y-1 text-xs leading-relaxed text-slate-500">
+        <li>
+          <span className="text-slate-300">MRKT</span> — собственный токен без
+          префикса, UUID из 36 символов. Площадка выдаёт его в обмен на
+          initData через <span className="font-mono">POST /api/v1/auth</span>.
+        </li>
+        <li>
+          <span className="text-slate-300">Portals</span> —{' '}
+          <span className="font-mono">tma&nbsp;…</span>, то есть initData как есть.
+        </li>
+        <li>
+          <span className="text-slate-300">GetGems</span> — заголовка
+          Authorization нет вовсе, сессия лежит в cookie. Скопируйте строку
+          Cookie целиком (там{' '}
+          <span className="font-mono">AUTH_TOKEN</span> и{' '}
+          <span className="font-mono">JWT_TOKEN</span>) — приложение отправит
+          её в нужный заголовок.
+        </li>
+      </ul>
+      <p className="mb-4 text-xs text-slate-500">Живёт 1–7 дней.</p>
 
       <div className="mb-4 space-y-2">
         {MARKETS.map((item) => {

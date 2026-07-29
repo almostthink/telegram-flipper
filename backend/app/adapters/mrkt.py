@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 
-from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace
+from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace, MarketplaceError
 from app.adapters.parsing import as_list, nano_to_ton, pick, to_datetime
 from app.domain import (
     ActivityEvent,
@@ -63,6 +63,7 @@ DEFAULT_ENDPOINTS = MarketEndpoints(
         "symbols": EndpointSpec("/api/v1/gifts/symbols", method="POST"),
         "balance": EndpointSpec("/api/v1/balance"),
         "me": EndpointSpec("/api/v1/me"),
+        "auth": EndpointSpec("/api/v1/auth", method="POST"),
         # --- не подтверждено: в записи этих действий не было ---
         # Предположения по симметрии с backdrops/symbols и по префиксу
         # /activities/, под которым лежит счётчик уведомлений.
@@ -156,6 +157,25 @@ def parse_mrkt_gift(raw: dict) -> Gift:
 class MrktAdapter(Marketplace):
     name = Market.MRKT
     supports_trading = True
+
+    async def exchange_init_data(self, init_data: str, *, photo: str = "") -> str:
+        """Меняем initData Telegram на собственный токен площадки.
+
+        MRKT не принимает initData напрямую, в отличие от Portals. Сначала
+        нужен обмен: POST /api/v1/auth с телом {data, photo, appId} отдаёт
+        токен, который дальше ставится в Authorization **без префикса** —
+        по записи трафика это UUID из 36 символов.
+
+        Тело запроса подтверждено записью, включая appId=null.
+        """
+        payload = await self.request(
+            "auth", json_body={"data": init_data, "photo": photo, "appId": None}
+        )
+        raw = payload if isinstance(payload, dict) else {}
+        token = pick(raw, "token")
+        if not token:
+            raise MarketplaceError("MRKT не вернул токен в ответе на авторизацию")
+        return str(token)
 
     async def collection_floors(self) -> list[CollectionFloor]:
         """Флоры коллекций. Подтверждено: массив в корне ответа."""
