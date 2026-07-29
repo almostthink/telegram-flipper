@@ -97,3 +97,65 @@ def test_score_stays_in_unit_range():
         "C", sales=sales, listings=[], floor_ton=10.0, best_offer_ton=10.0
     )
     assert 0.0 <= metrics.score <= 1.0
+
+
+# --- Отсутствие данных против отсутствия ликвидности ---------------------
+
+
+def test_empty_history_is_marked_as_unmeasured():
+    """Балл без единой сделки ничего не измеряет и должен это признавать.
+
+    Раньше все коллекции получали одинаковые 0.17, и это выглядело как
+    измерение, хотя означало «данных нет».
+    """
+    metrics = liquidity.compute("C", sales=[], listings=[], floor_ton=10.0)
+
+    assert not metrics.is_measured
+    assert metrics.parts["velocity"] == 0.0
+
+
+def test_history_makes_score_measured():
+    sales = [make_sale(sale_id=i, hours_ago=i) for i in range(1, 10)]
+    metrics = liquidity.compute("C", sales=sales, listings=[], floor_ton=10.0)
+
+    assert metrics.is_measured
+
+
+def test_suspicious_only_history_is_not_measured():
+    """Отбракованные антифродом сделки данными не считаются."""
+    sales = [make_sale(sale_id=i, hours_ago=i, suspicious=True) for i in range(1, 10)]
+    metrics = liquidity.compute("C", sales=sales, listings=[], floor_ton=10.0)
+
+    assert not metrics.is_measured
+
+
+def test_missing_offer_data_does_not_penalise():
+    """Нет источника офферов — вес уходит остальным, а не обнуляет балл.
+
+    Постоянный ноль за недоступный компонент одинаково давил все
+    коллекции и уводил под порог отбора даже заведомо ликвидные.
+    """
+    sales = [make_sale(sale_id=i, hours_ago=i * 2, tts_hours=6.0) for i in range(1, 40)]
+    listings = [make_listing(listing_id=f"l{i}", price_ton=10.5, row_id=i) for i in range(5)]
+
+    metrics = liquidity.compute("C", sales=sales, listings=listings, floor_ton=10.0)
+
+    assert "bid_support" in metrics.missing
+    # Без перераспределения тот же набор давал бы примерно 0.5.
+    assert metrics.score > 0.6
+
+
+def test_real_offer_data_is_used_not_redistributed():
+    sales = [make_sale(sale_id=i, hours_ago=i * 2, tts_hours=6.0) for i in range(1, 40)]
+    metrics = liquidity.compute(
+        "C", sales=sales, listings=[], floor_ton=10.0, best_offer_ton=9.0
+    )
+
+    assert metrics.missing == []
+    assert metrics.parts["bid_support"] > 0.5
+
+
+def test_score_stays_in_range_after_redistribution():
+    sales = [make_sale(sale_id=i, hours_ago=0.5, tts_hours=1.0) for i in range(1, 200)]
+    metrics = liquidity.compute("C", sales=sales, listings=[], floor_ton=10.0)
+    assert 0.0 <= metrics.score <= 1.0

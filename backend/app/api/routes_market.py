@@ -161,6 +161,8 @@ async def collection_detail(collection: str) -> dict:
         "floor_ton": floor,
         "liquidity": {
             "score": metrics.score,
+            "measured": metrics.is_measured,
+            "missing": metrics.missing,
             "parts": metrics.parts,
             "sales_24h": metrics.sales_24h,
             "sales_7d": metrics.sales_7d,

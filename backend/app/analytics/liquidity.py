@@ -39,12 +39,25 @@ class LiquidityMetrics:
     tts_median_hours: float | None = None
     #: Сколько лотов стоит в пределах +10% от флора. Толстая книга давит цену.
     depth_10pct: int = 0
-    #: Лучший коллекционный оффер как доля от флора — цена гарантированного выхода.
-    bid_support: float = 0.0
+    #: Лучший коллекционный оффер как доля от флора — цена гарантированного
+    #: выхода. None означает «данных нет», 0.0 — «офферов действительно нет».
+    bid_support: float | None = None
     spread: float | None = None
     floor_trend_24h: float | None = None
     score: float = 0.0
     parts: dict[str, float] = field(default_factory=dict)
+    #: Опиралась ли оценка хоть на одну сделку. Без истории балл ничего не
+    #: измеряет: он говорит «неизвестно», а не «ликвидности нет».
+    has_sales_data: bool = False
+    #: Компоненты, по которым данных не оказалось. Их вес перераспределён
+    #: между остальными, иначе отсутствующий источник наказывал бы все
+    #: коллекции одинаково и уводил их под порог отбора.
+    missing: list[str] = field(default_factory=list)
+
+    @property
+    def is_measured(self) -> bool:
+        """Можно ли считать балл измерением, а не заглушкой."""
+        return self.has_sales_data
 
     @property
     def expected_tts_hours(self) -> float:
@@ -79,6 +92,7 @@ def compute(
     week_ago = now - timedelta(days=7)
 
     clean = [sale for sale in sales if not sale.suspicious]
+    metrics.has_sales_data = bool(clean)
     metrics.sales_24h = sum(1 for sale in clean if _aware(sale.sold_at) >= day_ago)
     metrics.sales_7d = sum(1 for sale in clean if _aware(sale.sold_at) >= week_ago)
 
@@ -90,17 +104,41 @@ def compute(
         metrics.depth_10pct = sum(
             1 for listing in listings if listing.price_ton <= floor_ton * 1.10
         )
-        if best_offer_ton and best_offer_ton > 0:
+        if best_offer_ton is not None and best_offer_ton > 0:
             metrics.bid_support = best_offer_ton / floor_ton
             metrics.spread = 1 - metrics.bid_support
         if floor_24h_ago and floor_24h_ago > 0:
             metrics.floor_trend_24h = floor_ton / floor_24h_ago - 1
 
     metrics.parts = _components(metrics)
-    metrics.score = round(
-        sum(WEIGHTS[name] * value for name, value in metrics.parts.items()), 4
-    )
+    metrics.missing = _missing_components(metrics)
+    metrics.score = _weighted_score(metrics.parts, metrics.missing)
     return metrics
+
+
+def _missing_components(metrics: LiquidityMetrics) -> list[str]:
+    """Компоненты без источника данных.
+
+    Коллекционные офферы приложение пока не запрашивает ни у одной
+    площадки, и считать их отсутствие нулём неверно: это уводит вниз все
+    коллекции сразу, включая заведомо ликвидные, и они не проходят порог.
+    Отсутствие данных — не то же самое, что отсутствие спроса.
+    """
+    missing: list[str] = []
+    if metrics.bid_support is None:
+        missing.append("bid_support")
+    return missing
+
+
+def _weighted_score(parts: dict[str, float], missing: list[str]) -> float:
+    """Взвешенная сумма с перераспределением веса недоступных компонентов."""
+    usable = {name: value for name, value in parts.items() if name not in missing}
+    total_weight = sum(WEIGHTS[name] for name in usable)
+    if total_weight <= 0:
+        return 0.0
+    return round(
+        sum(WEIGHTS[name] * value for name, value in usable.items()) / total_weight, 4
+    )
 
 
 def _components(metrics: LiquidityMetrics) -> dict[str, float]:
@@ -113,7 +151,7 @@ def _components(metrics: LiquidityMetrics) -> dict[str, float]:
     # Оффер ниже половины флора выходом считать нельзя — это не поддержка,
     # а попытка выкупить дёшево.
     bid = 0.0
-    if metrics.bid_support >= 0.5:
+    if metrics.bid_support is not None and metrics.bid_support >= 0.5:
         bid = min((metrics.bid_support - 0.5) / 0.45, 1.0)
 
     # Глубина — штраф: чем больше конкурирующих лотов у флора, тем дольше

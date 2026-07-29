@@ -82,9 +82,19 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
         <Stat label="Флор" value={ton(data.floor_ton)} />
         <Stat
           label="Ликвидность"
-          value={liq.score.toFixed(2)}
-          tone={liq.score >= 0.5 ? 'profit' : liq.score >= 0.35 ? 'warn' : 'loss'}
-          hint={`продаж за 7д: ${liq.sales_7d}`}
+          value={liq.measured ? liq.score.toFixed(2) : '—'}
+          tone={
+            !liq.measured
+              ? 'warn'
+              : liq.score >= 0.5
+                ? 'profit'
+                : liq.score >= 0.35
+                  ? 'warn'
+                  : 'loss'
+          }
+          hint={
+            liq.measured ? `продаж за 7д: ${liq.sales_7d}` : 'нет истории сделок'
+          }
         />
         <Stat
           label="Ожидаемая продажа"
@@ -107,13 +117,34 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
         />
       </div>
 
+      {!liq.measured && (
+        <Alert tone="warn">
+          По коллекции не записано ни одной сделки, поэтому балл ликвидности
+          ничего не измеряет: он означает «неизвестно», а не «продаётся плохо».
+          Скорость продаж и время до продажи дают 65% балла и сейчас недоступны.
+          Нужен рабочий адрес ленты сделок — импортируйте HAR с открытым
+          разделом истории.
+        </Alert>
+      )}
+
       <div className="card">
         <h2 className="mb-3 text-sm font-medium text-slate-300">Состав балла ликвидности</h2>
         <div className="grid gap-3 sm:grid-cols-4">
           {Object.entries(liq.parts).map(([name, value]) => (
             <div key={name}>
-              <div className="mb-1 text-xs text-slate-500">{PART_LABELS[name] ?? name}</div>
-              <Bar value={value} />
+              <div className="mb-1 text-xs text-slate-500">
+                {PART_LABELS[name] ?? name}
+                {liq.missing.includes(name) && (
+                  <span className="ml-1 text-slate-600">— нет источника</span>
+                )}
+              </div>
+              {liq.missing.includes(name) ? (
+                <div className="text-xs text-slate-600">
+                  вес перераспределён на остальные
+                </div>
+              ) : (
+                <Bar value={value} />
+              )}
             </div>
           ))}
         </div>

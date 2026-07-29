@@ -106,6 +106,8 @@ export interface CollectionDetail {
   floor_ton: number
   liquidity: {
     score: number
+    measured: boolean
+    missing: string[]
     parts: Record<string, number>
     sales_24h: number
     sales_7d: number

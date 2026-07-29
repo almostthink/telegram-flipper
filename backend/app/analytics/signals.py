@@ -280,6 +280,12 @@ def _explain(
         f"(продаж за 7д: {metrics.sales_7d}, ожидаемая продажа "
         f"~{metrics.expected_tts_hours:.0f}ч, у флора {metrics.depth_10pct} лотов)."
     )
+    if not metrics.is_measured:
+        body += (
+            " ВНИМАНИЕ: истории сделок по коллекции нет, поэтому балл "
+            "ликвидности ничего не измеряет — он означает «неизвестно», "
+            "а не «продаётся плохо»."
+        )
     trait = numerology.classify(listing.number)
     collectible_note = ""
     if listing.number:
