@@ -15,15 +15,20 @@ def test_health_ok(client):
     assert body["auto_trade"] is False, "автомат должен быть выключен по умолчанию"
 
 
-def test_status_lists_all_marketplaces(client):
+def test_only_mrkt_is_tradable(client):
+    """Торгуем исключительно на MRKT.
+
+    Остальные площадки подключены как источник цен для кросс-маркет
+    сверки: их схемы не подтверждены записью трафика, и покупать по
+    неподтверждённому API нельзя.
+    """
     body = client.get(f"{API_PREFIX}/status").json()
     assert set(body["marketplaces"]) == {"portals", "mrkt", "tonnel", "getgems"}
 
-    # Tonnel и GetGems подключены только как источник цен для сверки.
-    assert body["marketplaces"]["portals"]["trade_enabled"] is True
     assert body["marketplaces"]["mrkt"]["trade_enabled"] is True
-    assert body["marketplaces"]["tonnel"]["trade_enabled"] is False
-    assert body["marketplaces"]["getgems"]["trade_enabled"] is False
+    for reference in ("portals", "tonnel", "getgems"):
+        assert body["marketplaces"][reference]["trade_enabled"] is False
+        assert body["marketplaces"][reference]["enabled"] is True
 
 
 def test_config_roundtrip(client):

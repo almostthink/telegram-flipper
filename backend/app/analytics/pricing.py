@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from app.analytics import numerology
 from app.analytics.rarity import known_rarity_count, rarity_score, rarity_scores
 from app.domain import AttributeKind, Gift, utcnow
 from app.storage.models import SaleRecord
@@ -79,6 +80,12 @@ class PricingContext:
     sales: list[SaleRecord] = field(default_factory=list)
     min_samples: int = 30
     halflife_days: float = 7.0
+    #: Максимальная надбавка к baseline за идеальный номер (#1).
+    number_bonus: float = 0.35
+    #: Названия фонов, которые рынок ценит отдельно от их редкости.
+    preferred_backdrops: list[str] = field(default_factory=list)
+    #: Надбавка за попадание фона в этот список.
+    backdrop_bonus: float = 0.15
 
 
 # --- Baseline ------------------------------------------------------------
@@ -94,6 +101,35 @@ def attribute_multiplier(
     if not floor or floor <= 0:
         return 1.0
     return float(np.clip(floor / context.floor_ton, MIN_MULTIPLIER, MAX_MULTIPLIER))
+
+
+def collectible_premium(
+    context: PricingContext, gift: Gift
+) -> tuple[float, dict[str, float]]:
+    """Надбавка за коллекционные признаки: номер выпуска и фон.
+
+    Нужна только для baseline. Как только накопится история сделок,
+    регрессия оценит эти же факторы по реальным ценам, и надбавка отсюда
+    получит соответственно меньший вес.
+
+    Множители складываются, а не перемножаются: красивый номер и ценный
+    фон усиливают друг друга, но не кратно.
+    """
+    trait = numerology.classify(gift.number)
+    number_part = context.number_bonus * trait.score
+
+    backdrop_part = 0.0
+    if gift.backdrop is not None and context.preferred_backdrops:
+        wanted = {name.strip().lower() for name in context.preferred_backdrops}
+        if gift.backdrop.name.strip().lower() in wanted:
+            backdrop_part = context.backdrop_bonus
+
+    premium = 1.0 + number_part + backdrop_part
+    return premium, {
+        "number_score": round(trait.score, 3),
+        "premium_number": round(number_part, 3),
+        "premium_backdrop": round(backdrop_part, 3),
+    }
 
 
 def baseline_value(context: PricingContext, gift: Gift) -> tuple[float, dict[str, float]]:
@@ -115,18 +151,38 @@ def baseline_value(context: PricingContext, gift: Gift) -> tuple[float, dict[str
     ordered = sorted(multipliers.values(), reverse=True)
     combined = ordered[0] * (ordered[1] ** 0.5) * (ordered[2] ** 0.25)
 
-    value = context.floor_ton * combined
-    return value, {**multipliers, "k_combined": combined, "floor": context.floor_ton}
+    premium, premium_parts = collectible_premium(context, gift)
+
+    value = context.floor_ton * combined * premium
+    return value, {
+        **multipliers,
+        **premium_parts,
+        "k_combined": combined,
+        "collectible_premium": round(premium, 3),
+        "floor": context.floor_ton,
+    }
 
 
 # --- Регрессия -----------------------------------------------------------
 
 
 def _features(
-    model_rarity: float, backdrop_rarity: float, symbol_rarity: float, days_ago: float
+    model_rarity: float,
+    backdrop_rarity: float,
+    symbol_rarity: float,
+    number_score: float,
+    days_ago: float,
 ) -> list[float]:
-    """Вектор признаков. Тренд по времени вбирает дрейф флора коллекции."""
-    return [1.0, model_rarity, backdrop_rarity, symbol_rarity, days_ago]
+    """Вектор признаков.
+
+    ``number_score`` — коллекционная ценность порядкового номера. Это
+    отдельная ось: рынок платит за #1 или #7777 надбавку, никак не
+    связанную с редкостью модели и фона. Коэффициент при нём модель
+    выучивает по фактическим сделкам, а не берёт из предположений.
+
+    Тренд по времени вбирает дрейф флора коллекции.
+    """
+    return [1.0, model_rarity, backdrop_rarity, symbol_rarity, number_score, days_ago]
 
 
 def _sale_features(sale: SaleRecord, now: datetime) -> tuple[list[float], float] | None:
@@ -146,6 +202,7 @@ def _sale_features(sale: SaleRecord, now: datetime) -> tuple[list[float], float]
         score(sale.model, sale.model_rarity, AttributeKind.MODEL),
         score(sale.backdrop, sale.backdrop_rarity, AttributeKind.BACKDROP),
         score(sale.symbol, sale.symbol_rarity, AttributeKind.SYMBOL),
+        numerology.score(sale.number),
         days_ago,
     )
     return features, math.log(sale.price_ton)
@@ -187,8 +244,9 @@ def fit_regression(context: PricingContext, now: datetime | None = None) -> Regr
         targets.append(log_price)
         weights.append(0.5 ** (days_ago / context.halflife_days))
 
-    if len(rows) < 8:
-        # Меньше восьми точек на пять коэффициентов — переобучение гарантировано.
+    if not rows or len(rows) < len(rows[0]) * 2:
+        # Точек должно быть заметно больше, чем коэффициентов, иначе
+        # регрессия просто запомнит выборку вместо того, чтобы обобщить.
         return None
 
     X = np.asarray(rows, dtype=float)
@@ -242,7 +300,9 @@ def _weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> flo
 def regression_value(fit: RegressionFit, gift: Gift) -> tuple[float, float]:
     """Предсказание на сегодня (days_ago = 0): медиана и нижний квантиль."""
     model_r, backdrop_r, symbol_r = rarity_scores(gift)
-    features = np.asarray(_features(model_r, backdrop_r, symbol_r, 0.0))
+    features = np.asarray(
+        _features(model_r, backdrop_r, symbol_r, numerology.score(gift.number), 0.0)
+    )
     center = float(features @ fit.coefficients)
     return (
         math.exp(center + fit.median_offset),

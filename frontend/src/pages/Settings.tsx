@@ -3,9 +3,11 @@ import { api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { Alert, Button, Page } from '../components/ui'
 
+// Торговля ведётся только на MRKT — её схема подтверждена записью трафика.
+// Остальные подключены как источник цен для кросс-маркет сверки.
 const MARKETS = [
-  { key: 'portals', label: 'Portals', tradable: true },
   { key: 'mrkt', label: 'MRKT', tradable: true },
+  { key: 'portals', label: 'Portals', tradable: false },
   { key: 'tonnel', label: 'Tonnel', tradable: false },
   { key: 'getgems', label: 'GetGems', tradable: false },
 ]
@@ -148,10 +150,83 @@ export default function Settings() {
           </div>
 
           <div className="card lg:col-span-2">
+            <h2 className="mb-1 text-sm font-medium text-slate-300">
+              Коллекционная ценность
+            </h2>
+            <p className="mb-4 text-xs leading-relaxed text-slate-500">
+              Рынок платит надбавку за порядковый номер и за отдельные фоны —
+              независимо от редкости модели. Подарок #1 стоит кратно дороже
+              #40597 при одинаковых атрибутах. Эти настройки влияют на оценку,
+              пока нет истории сделок; как только она накопится, регрессия
+              оценит те же факторы по фактическим ценам сама.
+              <br />
+              <span className="text-warn">
+                Учтите: коллекционные лоты дороже, но продаются дольше —
+                круг покупателей у них уже.
+              </span>
+            </p>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="space-y-3">
+                <Field
+                  label="Надбавка за номер #1 (доля)"
+                  value={config.data.collectible.number_bonus}
+                  onSave={(value) =>
+                    void patch({ collectible: { number_bonus: value } })
+                  }
+                />
+                <Field
+                  label="Надбавка за ценный фон (доля)"
+                  value={config.data.collectible.backdrop_bonus}
+                  onSave={(value) =>
+                    void patch({ collectible: { backdrop_bonus: value } })
+                  }
+                />
+                <Field
+                  label="Порог «заметного» номера (0..1)"
+                  value={config.data.collectible.min_number_score}
+                  onSave={(value) =>
+                    void patch({ collectible: { min_number_score: value } })
+                  }
+                />
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <span className="text-sm text-slate-400">
+                    Покупать только коллекционные
+                  </span>
+                  <Button
+                    variant={
+                      config.data.collectible.require_collectible ? 'primary' : 'default'
+                    }
+                    onClick={() =>
+                      void patch({
+                        collectible: {
+                          require_collectible:
+                            !config.data?.collectible.require_collectible,
+                        },
+                      })
+                    }
+                  >
+                    {config.data.collectible.require_collectible ? 'включено' : 'выключено'}
+                  </Button>
+                </div>
+              </div>
+
+              <BackdropList
+                value={config.data.collectible.preferred_backdrops}
+                onSave={(list) =>
+                  void patch({ collectible: { preferred_backdrops: list } })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="card lg:col-span-2">
             <h2 className="mb-1 text-sm font-medium text-slate-300">Комиссии площадок</h2>
             <p className="mb-4 text-xs text-slate-500">
-              Указаны долей: 0.05 = 5%. Уточните по факту — от этих чисел напрямую
-              зависит порог безубытка.
+              Указаны долей: 0.05 = 5%. Комиссия MRKT подтверждена записью
+              трафика — 2%, и берётся она с покупателя сверх цены продавца.
+              Остальные площадки подключены только как источник цен для
+              сверки, торговля на них не ведётся.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {MARKETS.map((market) => (
@@ -217,7 +292,12 @@ function TokensCard({
               key={item.key}
               className="flex items-center justify-between rounded-lg bg-ink-700 px-3 py-2 text-sm"
             >
-              <span className="text-slate-300">{item.label}</span>
+              <span className="text-slate-300">
+                {item.label}
+                {!item.tradable && (
+                  <span className="ml-2 text-xs text-slate-600">только цены</span>
+                )}
+              </span>
               <span
                 className={`text-xs ${
                   !state?.configured
@@ -486,6 +566,41 @@ function HarCard({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function BackdropList({
+  value,
+  onSave,
+}: {
+  value: string[]
+  onSave: (list: string[]) => void
+}) {
+  const [draft, setDraft] = useState(value.join('\n'))
+
+  return (
+    <div>
+      <div className="mb-1 text-sm text-slate-400">Ценные фоны</div>
+      <p className="mb-2 text-xs text-slate-500">
+        По одному в строке. Регистр не важен.
+      </p>
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        rows={6}
+        className="w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+        placeholder="Black&#10;Onyx Black"
+      />
+      <div className="mt-2">
+        <Button
+          onClick={() =>
+            onSave(draft.split('\n').map((line) => line.trim()).filter(Boolean))
+          }
+        >
+          Сохранить фоны
+        </Button>
+      </div>
     </div>
   )
 }

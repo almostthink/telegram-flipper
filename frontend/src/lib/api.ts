@@ -67,6 +67,9 @@ export interface Signal {
   market: string
   listing_id: string
   collection: string
+  number: number | null
+  number_score: number
+  number_label: string | null
   model: string | null
   backdrop: string | null
   symbol: string | null
@@ -227,6 +230,13 @@ export interface AppConfig {
   paper_mode: boolean
   auto_trade: boolean
   analytics: Record<string, number>
+  collectible: {
+    number_bonus: number
+    preferred_backdrops: string[]
+    backdrop_bonus: number
+    require_collectible: boolean
+    min_number_score: number
+  }
   risk: Record<string, number | string[]>
   sell: Record<string, number>
   marketplaces: Record<

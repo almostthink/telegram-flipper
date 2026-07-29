@@ -32,6 +32,7 @@ log = logging.getLogger(__name__)
 def _gift_columns(gift: Gift) -> dict[str, object]:
     return {
         "collection": gift.collection,
+        "number": gift.number,
         "model": gift.model.name if gift.model else None,
         "backdrop": gift.backdrop.name if gift.backdrop else None,
         "symbol": gift.symbol.name if gift.symbol else None,

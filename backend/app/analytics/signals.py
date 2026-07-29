@@ -20,10 +20,10 @@ from dataclasses import dataclass, field
 from datetime import UTC
 from enum import StrEnum
 
-from app.analytics import antifraud, pricing
+from app.analytics import antifraud, numerology, pricing
 from app.analytics import liquidity as liquidity_mod
 from app.analytics.pricing import FairValue, PricingContext
-from app.config import AnalyticsConfig
+from app.config import AnalyticsConfig, CollectibleConfig
 from app.domain import Attribute, AttributeKind, Gift, Market, utcnow
 from app.storage.models import ListingSnapshot, SignalRecord
 
@@ -44,6 +44,7 @@ class Reject(StrEnum):
     CROSS_MARKET = "дёшево на всех площадках"
     TOO_EXPENSIVE = "выше лимита на позицию"
     RESALE_LOCKED = "перепродажа заблокирована"
+    NOT_COLLECTIBLE = "нет коллекционных признаков"
 
 
 @dataclass(slots=True)
@@ -62,10 +63,14 @@ class Signal:
         return Market(self.listing.market)
 
     def to_record(self) -> SignalRecord:
+        trait = numerology.classify(self.listing.number)
         return SignalRecord(
             market=self.listing.market,
             listing_id=self.listing.listing_id,
             collection=self.listing.collection,
+            number=self.listing.number,
+            number_score=trait.score,
+            number_label=trait.label if trait.is_notable else None,
             model=self.listing.model,
             backdrop=self.listing.backdrop,
             symbol=self.listing.symbol,
@@ -112,10 +117,28 @@ def listing_to_gift(listing: ListingSnapshot) -> Gift:
     )
 
 
+def is_collectible(listing: ListingSnapshot, config: CollectibleConfig) -> bool:
+    """Есть ли у лота признаки, за которые рынок платит отдельно.
+
+    Два независимых основания: заметный порядковый номер либо фон из
+    списка предпочитаемых.
+    """
+    if numerology.score(listing.number) >= config.min_number_score:
+        return True
+    if listing.backdrop and config.preferred_backdrops:
+        wanted = {name.strip().lower() for name in config.preferred_backdrops}
+        if listing.backdrop.strip().lower() in wanted:
+            return True
+    return False
+
+
 def evaluate_collection(
-    data: EvaluationInput, config: AnalyticsConfig
+    data: EvaluationInput,
+    config: AnalyticsConfig,
+    collectible: CollectibleConfig | None = None,
 ) -> list[Signal]:
     """Оцениваем все листинги коллекции."""
+    collectible = collectible or CollectibleConfig()
     signals: list[Signal] = []
 
     # Коллекционные отсечки: если не проходит коллекция, не проходит ни один
@@ -123,7 +146,7 @@ def evaluate_collection(
     collection_reject = _collection_level_reject(data, config)
 
     for listing in data.listings:
-        signal = _evaluate_listing(listing, data, config, collection_reject)
+        signal = _evaluate_listing(listing, data, config, collectible, collection_reject)
         signals.append(signal)
 
     signals.sort(key=lambda s: s.score, reverse=True)
@@ -147,6 +170,7 @@ def _evaluate_listing(
     listing: ListingSnapshot,
     data: EvaluationInput,
     config: AnalyticsConfig,
+    collectible: CollectibleConfig,
     collection_reject: Reject | None,
 ) -> Signal:
     gift = listing_to_gift(listing)
@@ -164,7 +188,9 @@ def _evaluate_listing(
     )
 
     score = max(roi, 0.0) * data.liquidity.score * fair.confidence
-    reject = collection_reject or _listing_level_reject(listing, data, config, fair, roi)
+    reject = collection_reject or _listing_level_reject(
+        listing, data, config, collectible, fair, roi
+    )
 
     return Signal(
         listing=listing,
@@ -182,6 +208,7 @@ def _listing_level_reject(
     listing: ListingSnapshot,
     data: EvaluationInput,
     config: AnalyticsConfig,
+    collectible: CollectibleConfig,
     fair: FairValue,
     roi: float,
 ) -> Reject | None:
@@ -205,6 +232,12 @@ def _listing_level_reject(
             unlock = unlock.replace(tzinfo=UTC)
         if unlock > utcnow():
             return Reject.RESALE_LOCKED
+
+    # Режим «только коллекционное»: покупаем лишь то, за что рынок платит
+    # надбавку сверх атрибутов. Заметно сужает выдачу, поэтому выключен
+    # по умолчанию.
+    if collectible.require_collectible and not is_collectible(listing, collectible):
+        return Reject.NOT_COLLECTIBLE
 
     if antifraud.is_suspicious_listing(listing, data.listings):
         return Reject.SUSPICIOUS
@@ -247,5 +280,14 @@ def _explain(
         f"(продаж за 7д: {metrics.sales_7d}, ожидаемая продажа "
         f"~{metrics.expected_tts_hours:.0f}ч, у флора {metrics.depth_10pct} лотов)."
     )
+    trait = numerology.classify(listing.number)
+    collectible_note = ""
+    if listing.number:
+        collectible_note = f" Номер #{listing.number}"
+        if trait.is_notable:
+            collectible_note += f" — {trait.label}, рынок платит за такие надбавку."
+        else:
+            collectible_note += "."
+
     tail = f" ОТКЛОНЁН: {reject.value}." if reject else " Прошёл все фильтры."
-    return head + body + tail
+    return head + body + collectible_note + tail

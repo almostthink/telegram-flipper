@@ -173,6 +173,9 @@ async def _backtest_collection(
         sales=sales,
         min_samples=settings.analytics.min_samples_for_regression,
         halflife_days=settings.analytics.history_halflife_days,
+        number_bonus=settings.collectible.number_bonus,
+        preferred_backdrops=settings.collectible.preferred_backdrops,
+        backdrop_bonus=settings.collectible.backdrop_bonus,
     )
 
     for listing in candidates:

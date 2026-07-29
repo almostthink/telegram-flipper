@@ -66,6 +66,34 @@ class AnalyticsConfig(BaseModel):
     gas_ton: float = Field(default=0.08, ge=0)
 
 
+class CollectibleConfig(BaseModel):
+    """Коллекционные признаки: номер выпуска и ценные фоны.
+
+    Рынок платит за них надбавку, не связанную с редкостью модели: подарок
+    #1 стоит кратно дороже #40597 при одинаковых атрибутах, а чёрный фон
+    ценится отдельно от своей доли выпуска.
+
+    Эти настройки влияют на baseline-оценку. Как только накопится история
+    сделок, регрессия оценит те же факторы по фактическим ценам, и вес
+    настроек снизится сам — подгонять их вручную не придётся.
+    """
+
+    #: Максимальная надбавка к baseline за идеальный номер (#1).
+    #: Ноль полностью отключает учёт номера.
+    number_bonus: float = Field(default=0.35, ge=0, le=2.0)
+    #: Фоны, которые рынок ценит отдельно от их редкости.
+    preferred_backdrops: list[str] = Field(
+        default_factory=lambda: ["Black", "Onyx Black", "Midnight Blue", "Gold"]
+    )
+    #: Надбавка за попадание фона в список выше.
+    backdrop_bonus: float = Field(default=0.15, ge=0, le=1.0)
+    #: Покупать только лоты с коллекционными признаками: заметный номер
+    #: либо предпочитаемый фон. Сильно сужает выдачу — по умолчанию выкл.
+    require_collectible: bool = False
+    #: Порог балла номера, начиная с которого он считается заметным.
+    min_number_score: float = Field(default=0.5, ge=0, le=1)
+
+
 class RiskLimits(BaseModel):
     """Жёсткие лимиты. Действуют в обоих режимах, но критичны для автомата."""
 
@@ -124,13 +152,16 @@ class Settings(BaseSettings):
 
     # --- Секции ---
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
+    collectible: CollectibleConfig = Field(default_factory=CollectibleConfig)
     risk: RiskLimits = Field(default_factory=RiskLimits)
     sell: SellStrategy = Field(default_factory=SellStrategy)
     marketplaces: dict[str, MarketplaceConfig] = Field(
         default_factory=lambda: {
-            # Комиссия Portals не проверена по трафику — оставлена
-            # осторожная оценка 5%, правится в Настройках.
-            "portals": MarketplaceConfig(enabled=True, trade_enabled=True, fee_sell=0.05),
+            # Portals — только источник цен для сверки. Торговля ведётся
+            # исключительно на MRKT: её схема подтверждена записью трафика,
+            # а пути Portals остались предположением, и покупать вслепую
+            # по неподтверждённому API нельзя.
+            "portals": MarketplaceConfig(enabled=True, trade_enabled=False, fee_sell=0.05),
             # MRKT: подтверждено salePrice / salePriceWithoutFee = 1.02.
             "mrkt": MarketplaceConfig(
                 enabled=True, trade_enabled=True, fee_sell=1 - 1 / 1.02

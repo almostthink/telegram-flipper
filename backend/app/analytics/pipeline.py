@@ -87,6 +87,9 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
         sales=clean_sales,
         min_samples=settings.analytics.min_samples_for_regression,
         halflife_days=settings.analytics.history_halflife_days,
+        number_bonus=settings.collectible.number_bonus,
+        preferred_backdrops=settings.collectible.preferred_backdrops,
+        backdrop_bonus=settings.collectible.backdrop_bonus,
     )
 
     tradable = [
@@ -110,7 +113,7 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
         max_position_ton=settings.risk.max_position_ton,
     )
 
-    return evaluate_collection(data, settings.analytics)
+    return evaluate_collection(data, settings.analytics, settings.collectible)
 
 
 def _reference_floor(listings: list[ListingSnapshot], settings: Settings) -> float | None:

@@ -46,6 +46,10 @@ class ListingSnapshot(Base):
     market: Mapped[str] = mapped_column(String(16), index=True)
     listing_id: Mapped[str] = mapped_column(String(128), index=True)
     collection: Mapped[str] = mapped_column(String(128), index=True)
+    #: Порядковый номер выпуска. Рынок платит за него надбавку независимо
+    #: от редкости атрибутов: #1 стоит кратно дороже #40597 при одинаковых
+    #: модели, фоне и символе.
+    number: Mapped[int | None] = mapped_column(Integer)
     model: Mapped[str | None] = mapped_column(String(128))
     backdrop: Mapped[str | None] = mapped_column(String(128))
     symbol: Mapped[str | None] = mapped_column(String(128))
@@ -89,6 +93,9 @@ class SaleRecord(Base):
     #: совпадение атрибутов означает лишь общий срез, а не общий предмет.
     gift_external_id: Mapped[str | None] = mapped_column(String(128), index=True)
     collection: Mapped[str] = mapped_column(String(128), index=True)
+    #: Номер выпуска. Хранится, чтобы модель выучила надбавку за красивый
+    #: номер по фактическим сделкам, а не брала её из моих представлений.
+    number: Mapped[int | None] = mapped_column(Integer)
     model: Mapped[str | None] = mapped_column(String(128))
     backdrop: Mapped[str | None] = mapped_column(String(128))
     symbol: Mapped[str | None] = mapped_column(String(128))
@@ -218,9 +225,14 @@ class SignalRecord(Base):
     market: Mapped[str] = mapped_column(String(16))
     listing_id: Mapped[str] = mapped_column(String(128), index=True)
     collection: Mapped[str] = mapped_column(String(128), index=True)
+    number: Mapped[int | None] = mapped_column(Integer)
     model: Mapped[str | None] = mapped_column(String(128))
     backdrop: Mapped[str | None] = mapped_column(String(128))
     symbol: Mapped[str | None] = mapped_column(String(128))
+    #: Балл коллекционной ценности номера — показываем в интерфейсе, чтобы
+    #: было видно, за что именно движок доплачивает.
+    number_score: Mapped[float] = mapped_column(Float, default=0.0)
+    number_label: Mapped[str | None] = mapped_column(String(64))
 
     ask_ton: Mapped[float] = mapped_column(Float)
     fair_value_ton: Mapped[float] = mapped_column(Float)

@@ -93,6 +93,7 @@ export default function Opportunities() {
         <Table
           head={[
             'Коллекция',
+            'Номер',
             'Модель',
             'Аск',
             'Справедливо',
@@ -113,7 +114,28 @@ export default function Opportunities() {
                   <div className="text-slate-200">{signal.collection}</div>
                   <div className="text-xs text-slate-600">{signal.market}</div>
                 </td>
-                <td className="px-4 py-2.5 text-slate-400">{signal.model ?? '—'}</td>
+                <td className="px-4 py-2.5">
+                  {signal.number == null ? (
+                    <span className="text-slate-600">—</span>
+                  ) : signal.number_label ? (
+                    <span
+                      title={signal.number_label}
+                      className="badge bg-warn/15 font-mono text-warn"
+                    >
+                      #{signal.number}
+                    </span>
+                  ) : (
+                    <span className="font-mono text-xs text-slate-500">
+                      #{signal.number}
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-slate-400">
+                  <div>{signal.model ?? '—'}</div>
+                  {signal.backdrop && (
+                    <div className="text-xs text-slate-600">{signal.backdrop}</div>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 font-mono text-slate-200">{ton(signal.ask_ton)}</td>
                 <td className="px-4 py-2.5 font-mono text-slate-400">
                   {ton(signal.fair_value_ton)}
@@ -144,7 +166,7 @@ export default function Opportunities() {
               </tr>
               {expanded === signal.id && (
                 <tr className="bg-ink-900/60">
-                  <td colSpan={9} className="px-4 py-3 text-xs leading-relaxed text-slate-400">
+                  <td colSpan={10} className="px-4 py-3 text-xs leading-relaxed text-slate-400">
                     {signal.explanation}
                   </td>
                 </tr>
