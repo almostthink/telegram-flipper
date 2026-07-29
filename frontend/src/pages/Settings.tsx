@@ -8,7 +8,6 @@ import { Alert, Button, Page } from '../components/ui'
 const MARKETS = [
   { key: 'mrkt', label: 'MRKT', tradable: true },
   { key: 'portals', label: 'Portals', tradable: false },
-  { key: 'tonnel', label: 'Tonnel', tradable: false },
   { key: 'getgems', label: 'GetGems', tradable: false },
 ]
 

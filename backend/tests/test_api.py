@@ -23,10 +23,11 @@ def test_only_mrkt_is_tradable(client):
     неподтверждённому API нельзя.
     """
     body = client.get(f"{API_PREFIX}/status").json()
-    assert set(body["marketplaces"]) == {"portals", "mrkt", "tonnel", "getgems"}
+    assert set(body["marketplaces"]) == {"portals", "mrkt", "getgems"}
+    assert "tonnel" not in body["marketplaces"], "Tonnel закрылся и удалён"
 
     assert body["marketplaces"]["mrkt"]["trade_enabled"] is True
-    for reference in ("portals", "tonnel", "getgems"):
+    for reference in ("portals", "getgems"):
         assert body["marketplaces"][reference]["trade_enabled"] is False
         assert body["marketplaces"][reference]["enabled"] is True
 

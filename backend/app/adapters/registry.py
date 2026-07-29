@@ -21,14 +21,12 @@ log = logging.getLogger(__name__)
 DEFAULT_ENDPOINTS: dict[Market, MarketEndpoints] = {
     Market.PORTALS: portals.DEFAULT_ENDPOINTS,
     Market.MRKT: mrkt.DEFAULT_ENDPOINTS,
-    Market.TONNEL: reference.TONNEL_ENDPOINTS,
     Market.GETGEMS: reference.GETGEMS_ENDPOINTS,
 }
 
 ADAPTER_CLASSES: dict[Market, type[Marketplace]] = {
     Market.PORTALS: portals.PortalsAdapter,
     Market.MRKT: mrkt.MrktAdapter,
-    Market.TONNEL: reference.TonnelAdapter,
     Market.GETGEMS: reference.GetGemsAdapter,
 }
 

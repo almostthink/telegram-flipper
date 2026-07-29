@@ -119,7 +119,7 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
 def _reference_floor(listings: list[ListingSnapshot], settings: Settings) -> float | None:
     """Минимальная цена на площадках, где мы не торгуем.
 
-    Если Tonnel и GetGems показывают тот же уровень, что и «дешёвый» лот
+    Если Portals и GetGems показывают тот же уровень, что и «дешёвый» лот
     на MRKT, — это не скидка, а текущая цена рынка.
     """
     reference_prices: list[float] = []

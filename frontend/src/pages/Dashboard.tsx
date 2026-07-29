@@ -6,7 +6,6 @@ import { Alert, Button, Empty, Page, Stat } from '../components/ui'
 const MARKET_LABELS: Record<string, string> = {
   portals: 'Portals',
   mrkt: 'MRKT',
-  tonnel: 'Tonnel',
   getgems: 'GetGems',
 }
 

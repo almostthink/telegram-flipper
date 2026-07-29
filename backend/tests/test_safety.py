@@ -50,3 +50,52 @@ def test_auto_trade_allowed_with_live_and_whitelist(client):
         f"{API_PREFIX}/config",
         json={"auto_trade": False, "paper_mode": True, "risk": {"collection_whitelist": []}},
     )
+
+
+def test_dead_marketplace_is_gone_from_enum():
+    """Tonnel прекратил работу и удалён из перечисления, а не выключен флагом.
+
+    Оставленный выключенным адаптер продолжал бы значиться в интерфейсе, а при
+    случайном включении — ходить в мёртвый домен и копить таймауты.
+    """
+    from app.adapters import registry
+    from app.domain import Market
+
+    assert {market.value for market in Market} == {"portals", "mrkt", "getgems"}
+    assert {market.value for market in registry.ADAPTER_CLASSES} == {
+        "portals",
+        "mrkt",
+        "getgems",
+    }
+    assert Settings().marketplaces.keys() == {"portals", "mrkt", "getgems"}
+
+
+def test_stale_config_drops_removed_marketplaces():
+    """Сохранённый конфиг переживает обновления.
+
+    Без чистки закрытая площадка воскресала бы из старого config.json после
+    удаления из кода.
+    """
+    from app.config import _drop_unknown_marketplaces
+
+    stored = {
+        "paper_mode": True,
+        "marketplaces": {
+            "mrkt": {"enabled": True},
+            "tonnel": {"enabled": True},
+            "выдуманная": {"enabled": True},
+        },
+    }
+    cleaned = _drop_unknown_marketplaces(stored)
+
+    assert set(cleaned["marketplaces"]) == {"mrkt"}
+    # Остальные разделы конфига трогать нельзя.
+    assert cleaned["paper_mode"] is True
+    # Исходный словарь не мутируем.
+    assert "tonnel" in stored["marketplaces"]
+
+
+def test_config_without_marketplaces_section_is_untouched():
+    from app.config import _drop_unknown_marketplaces
+
+    assert _drop_unknown_marketplaces({"paper_mode": False}) == {"paper_mode": False}

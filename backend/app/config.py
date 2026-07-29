@@ -21,13 +21,13 @@ from app import paths
 APP_VERSION = "0.1.0"
 API_PREFIX = "/api/v1"
 
-MarketplaceName = Literal["portals", "mrkt", "tonnel", "getgems"]
+MarketplaceName = Literal["portals", "mrkt", "getgems"]
 
 
 class MarketplaceConfig(BaseModel):
     """Настройки одной площадки.
 
-    ``trade_enabled`` отделён от ``enabled`` намеренно: Tonnel и GetGems
+    ``trade_enabled`` отделён от ``enabled`` намеренно: Portals и GetGems
     подключены только как источник цен для сверки, торговать там не будем.
     """
 
@@ -167,7 +167,6 @@ class Settings(BaseSettings):
                 enabled=True, trade_enabled=True, fee_sell=1 - 1 / 1.02
             ),
             # Только сверка цен — торговлю не ведём.
-            "tonnel": MarketplaceConfig(enabled=True, trade_enabled=False),
             "getgems": MarketplaceConfig(enabled=True, trade_enabled=False),
         }
     )
@@ -180,13 +179,32 @@ class Settings(BaseSettings):
         )
 
 
+def _drop_unknown_marketplaces(stored: dict) -> dict:
+    """Выкидываем площадки, которых больше нет в приложении.
+
+    Сохранённый конфиг переживает обновления, и без этой чистки закрытый
+    Tonnel продолжал бы висеть в интерфейсе после его удаления из кода.
+    """
+    markets = stored.get("marketplaces")
+    if not isinstance(markets, dict):
+        return stored
+
+    from app.domain import Market
+
+    known = {market.value for market in Market}
+    unknown = set(markets) - known
+    if unknown:
+        stored = {**stored, "marketplaces": {k: v for k, v in markets.items() if k in known}}
+    return stored
+
+
 def load_settings() -> Settings:
     """Читаем config.json, если он есть, иначе стартуем на значениях по умолчанию."""
     path = paths.config_path()
     if path.exists():
         try:
             stored = json.loads(path.read_text(encoding="utf-8"))
-            return Settings(**stored)
+            return Settings(**_drop_unknown_marketplaces(stored))
         except (json.JSONDecodeError, ValueError):
             # Битый конфиг не должен мешать запуску — откатываемся на дефолты.
             backup = path.with_suffix(".json.broken")

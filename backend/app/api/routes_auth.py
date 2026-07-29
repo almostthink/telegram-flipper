@@ -181,6 +181,5 @@ def _host_hint(market: Market) -> str | None:
     return {
         Market.PORTALS: "portals",
         Market.MRKT: "mrkt",
-        Market.TONNEL: "tonnel",
         Market.GETGEMS: "getgems",
     }.get(market)

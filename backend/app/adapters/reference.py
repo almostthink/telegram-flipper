@@ -1,9 +1,13 @@
-"""Референсные площадки: Tonnel и GetGems — только чтение цен.
+"""Референсные площадки — только чтение цен.
 
 Торговлю здесь не ведём. Смысл в кросс-маркет сверке: если лот дёшев на
-MRKT, но так же дёшев на Tonnel и GetGems — это не скидка, а новый уровень
-рынка, и покупать его нельзя. Именно эта проверка отсекает основную часть
-ложных сигналов.
+MRKT, но так же дёшев на соседних площадках, то это не скидка, а новый
+уровень рынка, и покупать его нельзя. Именно эта проверка отсекает
+основную часть ложных сигналов.
+
+Tonnel убран: площадка прекратила работу. Адаптер удалён целиком, а не
+выключен флагом — иначе сканер продолжал бы ходить в мёртвый домен,
+копить таймауты и засорять журнал ошибками.
 """
 
 from __future__ import annotations
@@ -12,24 +16,9 @@ import logging
 
 from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace
 from app.adapters.parsing import as_list, parse_gift, pick, to_datetime, to_ton
-from app.domain import (
-    ActivityEvent,
-    ActivityKind,
-    CollectionFloor,
-    Listing,
-    Market,
-)
+from app.domain import CollectionFloor, Listing, Market
 
 log = logging.getLogger(__name__)
-
-TONNEL_ENDPOINTS = MarketEndpoints(
-    base_url="https://gifts2.tonnel.network/api",
-    endpoints={
-        "collections": EndpointSpec("/pageGifts"),
-        "listings": EndpointSpec("/pageGifts"),
-        "activity": EndpointSpec("/saleHistory"),
-    },
-)
 
 GETGEMS_ENDPOINTS = MarketEndpoints(
     base_url="https://api.getgems.io",
@@ -91,40 +80,6 @@ class ReadOnlyAdapter(Marketplace):
                 )
             )
         return listings
-
-
-class TonnelAdapter(ReadOnlyAdapter):
-    name = Market.TONNEL
-
-    def __init__(self, *args, **kwargs) -> None:
-        kwargs.setdefault("endpoints", TONNEL_ENDPOINTS)
-        super().__init__(*args, **kwargs)
-
-    async def activity(
-        self, collection: str | None = None, *, limit: int = 100
-    ) -> list[ActivityEvent]:
-        """История продаж Tonnel — полезна для калибровки, даже без торговли."""
-        params: dict[str, object] = {"limit": min(limit, 200)}
-        if collection:
-            params["gift_name"] = collection
-
-        payload = await self.request("activity", params=params)
-        events: list[ActivityEvent] = []
-        for raw in as_list(payload):
-            price = to_ton(pick(raw, "price", "amount"))
-            happened = to_datetime(pick(raw, "date", "created_at", "timestamp"))
-            if price is None or happened is None:
-                continue
-            events.append(
-                ActivityEvent(
-                    market=self.name,
-                    kind=ActivityKind.SALE,
-                    gift=parse_gift(raw, fallback_collection=collection or ""),
-                    price_ton=price,
-                    happened_at=happened,
-                )
-            )
-        return events
 
 
 class GetGemsAdapter(ReadOnlyAdapter):
