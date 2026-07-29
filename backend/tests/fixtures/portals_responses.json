@@ -1,0 +1,531 @@
+{
+ "collections": {
+  "collections": [
+   {
+    "id": "013a775d-4d7d-457b-9d3d-30a6429ea79f",
+    "name": "Heroic Helmet",
+    "short_name": "heroichelmet",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/heroichelmet/models/png/aegeansea.png",
+    "is_premarket": false,
+    "is_crafted": false,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "2263.61",
+    "volume": "1334076.461",
+    "floor_price": "172.69",
+    "supply": 3434,
+    "listed_count": 234,
+    "sales_24h_count": 13,
+    "market_cap": "593017.46",
+    "is_favorite": false
+   },
+   {
+    "id": "f0125f02-2b17-4882-95b4-8715a88678a5",
+    "name": "Swiss Watch",
+    "short_name": "swisswatch",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/swisswatch/models/png/amazon.png",
+    "is_premarket": false,
+    "is_crafted": false,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "2194.76",
+    "volume": "1818761.171624",
+    "floor_price": "45.19",
+    "supply": 25980,
+    "listed_count": 533,
+    "sales_24h_count": 37,
+    "market_cap": "1174036.2",
+    "is_favorite": false
+   },
+   {
+    "id": "de1fd7b2-bb97-4551-af27-5f4f57594134",
+    "name": "Rare Bird",
+    "short_name": "rarebird",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/rarebird/models/png/azurespark.png",
+    "is_premarket": false,
+    "is_crafted": false,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "1097.58",
+    "volume": "492444.804417",
+    "floor_price": "21.78",
+    "supply": 12821,
+    "listed_count": 877,
+    "sales_24h_count": 49,
+    "market_cap": "279241.38",
+    "is_favorite": false
+   },
+   {
+    "id": "1c1616f5-2f39-47dc-9f27-e77fa1b6a569",
+    "name": "Sakura Flower",
+    "short_name": "sakuraflower",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/sakuraflower/models/png/aetheris.png",
+    "is_premarket": false,
+    "is_crafted": false,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "971.62",
+    "volume": "557387.50625",
+    "floor_price": "8.13",
+    "supply": 87913,
+    "listed_count": 2892,
+    "sales_24h_count": 110,
+    "market_cap": "714732.69",
+    "is_favorite": false
+   },
+   {
+    "id": "1501b9b9-83e0-4d05-a3af-d0e2021c6d5e",
+    "name": "Jingle Bells",
+    "short_name": "jinglebells",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/jinglebells/models/png/antique.png",
+    "is_premarket": false,
+    "is_crafted": true,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "329.72",
+    "volume": "505848.409722",
+    "floor_price": "6.4",
+    "supply": 71194,
+    "listed_count": 2035,
+    "sales_24h_count": 34,
+    "market_cap": "455641.6",
+    "is_favorite": false
+   },
+   {
+    "id": "ae8f48a9-e090-44f2-9c61-5928702ab171",
+    "name": "Desk Calendar",
+    "short_name": "deskcalendar",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/deskcalendar/models/png/adulttasks.png",
+    "is_premarket": false,
+    "is_crafted": true,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "1226.34",
+    "volume": "2754898.434503",
+    "floor_price": "4.19",
+    "supply": 271142,
+    "listed_count": 4169,
+    "sales_24h_count": 125,
+    "market_cap": "1136084.98",
+    "is_favorite": false
+   },
+   {
+    "id": "dd0f6245-034c-4d58-9815-a8e939d1def9",
+    "name": "Spring Basket",
+    "short_name": "springbasket",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/springbasket/models/png/bastet.png",
+    "is_premarket": false,
+    "is_crafted": false,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "603.9392",
+    "volume": "745739.358713605",
+    "floor_price": "4.83",
+    "supply": 182465,
+    "listed_count": 2503,
+    "sales_24h_count": 81,
+    "market_cap": "881305.95",
+    "is_favorite": false
+   },
+   {
+    "id": "782f60ca-5779-4228-9673-4ab7ad4b38f4",
+    "name": "Victory Medal",
+    "short_name": "victorymedal",
+    "photo_url": "https://storage.portal-market.com/portals-market/gifts/victorymedal/models/png/aegis.png",
+    "is_premarket": false,
+    "is_crafted": false,
+    "is_new": false,
+    "zero_commission": false,
+    "created_at": "0001-01-01T00:00:00Z",
+    "day_volume": "618.6242",
+    "volume": "498586.576701",
+    "floor_price": "3.94",
+    "supply": 105352,
+    "listed_count": 3552,
+    "sales_24h_count": 78,
+    "market_cap": "415086.88",
+    "is_favorite": false
+   }
+  ]
+ },
+ "search": {
+  "results": [
+   {
+    "id": "00000000-0000-4000-8000-000000000000",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-1155",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 1155,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-1155.large.jpg",
+    "price": "49.98",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Red Rum",
+      "rarity_per_mille": 2
+     },
+     {
+      "type": "symbol",
+      "value": "Moon",
+      "rarity_per_mille": 1.6
+     },
+     {
+      "type": "backdrop",
+      "value": "Rosewood",
+      "rarity_per_mille": 2
+     }
+    ],
+    "listed_at": "2026-07-29T16:20:23.268937Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-1155.lottie.json",
+    "emoji_id": "3191530815439765552",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-29T14:16:06.919481Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2026-04-04T19:09:34Z",
+    "ton_address": "EQ_test_address_redacted",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-3302",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 3302,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-3302.medium.jpg",
+    "price": "49.98",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Poison Toad",
+      "rarity_per_mille": 2
+     },
+     {
+      "type": "symbol",
+      "value": "Autumn Leaves",
+      "rarity_per_mille": 2.4
+     },
+     {
+      "type": "backdrop",
+      "value": "Azure Blue",
+      "rarity_per_mille": 2
+     }
+    ],
+    "listed_at": "2026-07-29T15:53:17.298244Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-3302.lottie.json",
+    "emoji_id": "5411405475788944497",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-29T06:09:24.745208Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2025-01-23T11:31:35Z",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false,
+    "ton_address": "EQ_test_address_redacted"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-339",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 339,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-339.medium.jpg",
+    "price": "49.99",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Turning Blue",
+      "rarity_per_mille": 2.5
+     },
+     {
+      "type": "symbol",
+      "value": "Illuminati",
+      "rarity_per_mille": 1.6
+     },
+     {
+      "type": "backdrop",
+      "value": "Pacific Green",
+      "rarity_per_mille": 2
+     }
+    ],
+    "listed_at": "2026-07-29T15:35:37.983192Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-339.lottie.json",
+    "emoji_id": "5397567387513938549",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-28T16:25:26.026646Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2026-05-28T06:41:49Z",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false,
+    "ton_address": "EQ_test_address_redacted"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-1554",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 1554,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-1554.medium.jpg",
+    "price": "51.98",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Liquid Death",
+      "rarity_per_mille": 2.5
+     },
+     {
+      "type": "symbol",
+      "value": "Moon",
+      "rarity_per_mille": 1.6
+     },
+     {
+      "type": "backdrop",
+      "value": "Light Olive",
+      "rarity_per_mille": 1.5
+     }
+    ],
+    "listed_at": "2026-07-29T16:40:07.994742Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-1554.lottie.json",
+    "emoji_id": "3191530815439765552",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-29T15:18:34.189959Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2025-11-01T23:22:52Z",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false,
+    "ton_address": "EQ_test_address_redacted"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000004",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-4034",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 4034,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-4034.medium.jpg",
+    "price": "51.99",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Rewind",
+      "rarity_per_mille": 2
+     },
+     {
+      "type": "symbol",
+      "value": "Eyeball",
+      "rarity_per_mille": 1.6
+     },
+     {
+      "type": "backdrop",
+      "value": "Moonstone",
+      "rarity_per_mille": 2
+     }
+    ],
+    "listed_at": "2026-07-29T14:57:53.555653Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-4034.lottie.json",
+    "emoji_id": "5431432045001726415",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2025-11-16T19:41:48.003209Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2026-07-28T11:18:41.712082Z",
+    "ton_address": "EQ_test_address_redacted",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000005",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-474",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 474,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-474.medium.jpg",
+    "price": "52",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Turning Blue",
+      "rarity_per_mille": 2.5
+     },
+     {
+      "type": "symbol",
+      "value": "Flying Witch",
+      "rarity_per_mille": 2
+     },
+     {
+      "type": "backdrop",
+      "value": "Burgundy",
+      "rarity_per_mille": 1.5
+     }
+    ],
+    "listed_at": "2026-07-29T10:08:12.307715Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-474.lottie.json",
+    "emoji_id": "5397567387513938549",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-29T07:26:15.163359Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2025-11-16T23:04:31Z",
+    "ton_address": "EQ_test_address_redacted",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000090",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-1155",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 1155,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-1155.large.jpg",
+    "price": "49.98",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Red Rum",
+      "rarity_per_mille": 2
+     },
+     {
+      "type": "symbol",
+      "value": "Moon",
+      "rarity_per_mille": 1.6
+     },
+     {
+      "type": "backdrop",
+      "value": "Rosewood",
+      "rarity_per_mille": 2
+     }
+    ],
+    "listed_at": "2026-07-29T16:20:23.268937Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-1155.lottie.json",
+    "emoji_id": "3191530815439765552",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-29T14:16:06.919481Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2099-01-01T00:00:00Z",
+    "ton_address": "EQ_test_address_redacted",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": false
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000091",
+    "bundle_id": null,
+    "tg_id": "MagicPotion-3302",
+    "collection_id": "a17b488a-3942-4eae-89f9-bba2ce342c6b",
+    "external_collection_number": 3302,
+    "name": "Magic Potion",
+    "photo_url": "https://nft.fragment.com/gift/magicpotion-3302.medium.jpg",
+    "price": "49.98",
+    "attributes": [
+     {
+      "type": "model",
+      "value": "Poison Toad",
+      "rarity_per_mille": 2
+     },
+     {
+      "type": "symbol",
+      "value": "Autumn Leaves",
+      "rarity_per_mille": 2.4
+     },
+     {
+      "type": "backdrop",
+      "value": "Azure Blue",
+      "rarity_per_mille": 2
+     }
+    ],
+    "listed_at": "2026-07-29T15:53:17.298244Z",
+    "status": "listed",
+    "animation_url": "https://nft.fragment.com/gift/magicpotion-3302.lottie.json",
+    "emoji_id": "5411405475788944497",
+    "has_animation": true,
+    "import_source": "user_bot",
+    "imported_at": "2026-07-29T06:09:24.745208Z",
+    "floor_price": "49.98",
+    "unlocks_at": "2025-01-23T11:31:35Z",
+    "is_crafted": false,
+    "lucky_buy_eligible": true,
+    "fiat_eligible": true,
+    "fiat_purchase_in_progress": false,
+    "is_owned": true,
+    "ton_address": "EQ_test_address_redacted"
+   }
+  ],
+  "total_count": 8
+ },
+ "symbols": [
+  {
+   "name": "Acorn",
+   "url": "https://storage.portal-market.com/portals-market/gifts/artisanbrick/patterns/acorn.png",
+   "floor_price": "3"
+  },
+  {
+   "name": "Alarm",
+   "url": "https://storage.portal-market.com/portals-market/gifts/artisanbrick/patterns/alarm.png",
+   "floor_price": "2.89"
+  },
+  {
+   "name": "Alkonost",
+   "url": "https://storage.portal-market.com/portals-market/gifts/artisanbrick/patterns/alkonost.png",
+   "floor_price": "2.99"
+  },
+  {
+   "name": "All-Seeing Eye",
+   "url": "https://storage.portal-market.com/portals-market/gifts/artisanbrick/patterns/allseeingeye.png",
+   "floor_price": "3"
+  },
+  {
+   "name": "Anubis",
+   "url": "https://storage.portal-market.com/portals-market/gifts/artisanbrick/patterns/anubis.png",
+   "floor_price": "3"
+  },
+  {
+   "name": "Axe",
+   "url": "https://storage.portal-market.com/portals-market/gifts/artisanbrick/patterns/axe.png",
+   "floor_price": "2.9"
+  }
+ ]
+}
