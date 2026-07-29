@@ -60,6 +60,8 @@ async def upsert_listings(session: AsyncSession, listings: list[Listing]) -> int
             "seen_at": item.seen_at,
             "gone_at": None,
             "url": item.url,
+            "resale_available_at": item.resale_available_at,
+            "locked": item.locked,
         }
         for item in listings
     ]
@@ -70,6 +72,8 @@ async def upsert_listings(session: AsyncSession, listings: list[Listing]) -> int
         set_={
             "price_ton": statement.excluded.price_ton,
             "seen_at": statement.excluded.seen_at,
+            "resale_available_at": statement.excluded.resale_available_at,
+            "locked": statement.excluded.locked,
             # Лот вернулся в выдачу — снимаем отметку об исчезновении.
             "gone_at": None,
         },

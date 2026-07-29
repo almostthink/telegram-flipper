@@ -33,9 +33,15 @@ class MarketplaceConfig(BaseModel):
 
     enabled: bool = True
     trade_enabled: bool = False
-    #: Комиссия продавца, доля от цены. Уточняется по факту на Этапе 1.
+    #: Издержка сделки как удержание с цены продажи.
+    #:
+    #: Все цены в приложении — покупательские, поэтому комиссия любой формы
+    #: выражается здесь. У MRKT надбавка 2% берётся с покупателя сверх цены
+    #: продавца: получить за лот Y/1.02 при цене показа Y эквивалентно
+    #: удержанию 1.961% — это подтверждено записью трафика площадки.
     fee_sell: float = Field(default=0.05, ge=0, le=0.5)
-    #: Комиссия покупателя, доля от цены. На большинстве площадок 0.
+    #: Комиссия, добавляемая к нашей цене покупки. Обычно 0: у площадок
+    #: надбавка уже включена в отображаемую цену.
     fee_buy: float = Field(default=0.0, ge=0, le=0.5)
     #: Пауза между запросами, секунды — бережём аккаунт от rate-limit.
     request_delay_sec: float = Field(default=1.0, ge=0)
@@ -122,8 +128,13 @@ class Settings(BaseSettings):
     sell: SellStrategy = Field(default_factory=SellStrategy)
     marketplaces: dict[str, MarketplaceConfig] = Field(
         default_factory=lambda: {
-            "portals": MarketplaceConfig(enabled=True, trade_enabled=True),
-            "mrkt": MarketplaceConfig(enabled=True, trade_enabled=True),
+            # Комиссия Portals не проверена по трафику — оставлена
+            # осторожная оценка 5%, правится в Настройках.
+            "portals": MarketplaceConfig(enabled=True, trade_enabled=True, fee_sell=0.05),
+            # MRKT: подтверждено salePrice / salePriceWithoutFee = 1.02.
+            "mrkt": MarketplaceConfig(
+                enabled=True, trade_enabled=True, fee_sell=1 - 1 / 1.02
+            ),
             # Только сверка цен — торговлю не ведём.
             "tonnel": MarketplaceConfig(enabled=True, trade_enabled=False),
             "getgems": MarketplaceConfig(enabled=True, trade_enabled=False),

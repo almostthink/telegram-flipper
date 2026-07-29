@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC
 from enum import StrEnum
 
 from app.analytics import antifraud, pricing
 from app.analytics import liquidity as liquidity_mod
 from app.analytics.pricing import FairValue, PricingContext
 from app.config import AnalyticsConfig
-from app.domain import Attribute, AttributeKind, Gift, Market
+from app.domain import Attribute, AttributeKind, Gift, Market, utcnow
 from app.storage.models import ListingSnapshot, SignalRecord
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ class Reject(StrEnum):
     LOW_CONFIDENCE = "низкое доверие к оценке"
     CROSS_MARKET = "дёшево на всех площадках"
     TOO_EXPENSIVE = "выше лимита на позицию"
+    RESALE_LOCKED = "перепродажа заблокирована"
 
 
 @dataclass(slots=True)
@@ -191,6 +193,18 @@ def _listing_level_reject(
         return Reject.TOO_EXPENSIVE
     if roi < config.min_roi:
         return Reject.LOW_ROI
+
+    # Блокировка перепродажи — отказ без обсуждения. Купить подарок,
+    # который нельзя продать ещё несколько дней, значит заморозить
+    # капитал: единственный рабочий ресурс флиппера.
+    if listing.locked:
+        return Reject.RESALE_LOCKED
+    if listing.resale_available_at is not None:
+        unlock = listing.resale_available_at
+        if unlock.tzinfo is None:
+            unlock = unlock.replace(tzinfo=UTC)
+        if unlock > utcnow():
+            return Reject.RESALE_LOCKED
 
     if antifraud.is_suspicious_listing(listing, data.listings):
         return Reject.SUSPICIOUS

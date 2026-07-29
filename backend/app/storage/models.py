@@ -58,6 +58,11 @@ class ListingSnapshot(Base):
     seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     gone_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     url: Mapped[str | None] = mapped_column(Text)
+    #: Блокировка перепродажи: подарок куплен, но продать его нельзя ещё
+    #: несколько дней. Для флиппера это замороженный капитал, поэтому
+    #: такие лоты отсекаются до расчёта экономики.
+    resale_available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (
         UniqueConstraint("market", "listing_id", name="uq_listing"),

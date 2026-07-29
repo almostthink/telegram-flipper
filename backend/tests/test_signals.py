@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from app.analytics import liquidity as liquidity_mod
 from app.analytics.pricing import PricingContext
 from app.analytics.signals import EvaluationInput, Reject, evaluate_collection
 from app.config import AnalyticsConfig
+from app.domain import utcnow
 
 from tests.factories import make_listing, sales_population
 
@@ -121,3 +124,33 @@ def test_signals_sorted_by_score():
     signals = evaluate_collection(data, CONFIG)
     scores = [signal.score for signal in signals]
     assert scores == sorted(scores, reverse=True)
+
+
+def test_locked_lot_is_rejected():
+    """Заблокированный для перепродажи лот — отказ независимо от скидки.
+
+    Площадка блокирует свежепереданные подарки на несколько дней. Купить
+    такой значит заморозить капитал, а модель ликвидности об этом не знает.
+    """
+    data = build(ask=12.0)
+    data.listings[0].locked = True
+
+    signals = evaluate_collection(data, CONFIG)
+    assert signals[0].reject_reason is Reject.RESALE_LOCKED
+
+
+def test_future_resale_date_is_rejected():
+    data = build(ask=12.0)
+    data.listings[0].resale_available_at = utcnow() + timedelta(days=3)
+
+    signals = evaluate_collection(data, CONFIG)
+    assert signals[0].reject_reason is Reject.RESALE_LOCKED
+
+
+def test_past_resale_date_is_fine():
+    """Дата разблокировки в прошлом ничему не мешает."""
+    data = build(ask=12.0)
+    data.listings[0].resale_available_at = utcnow() - timedelta(days=30)
+
+    signals = evaluate_collection(data, CONFIG)
+    assert signals[0].passed, signals[0].explanation

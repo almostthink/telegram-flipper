@@ -25,15 +25,46 @@ log = logging.getLogger(__name__)
 #: Ключевые слова пути → имя эндпоинта в MarketEndpoints.
 #: Порядок важен: более специфичные проверки идут раньше.
 CLASSIFIERS: list[tuple[str, tuple[str, ...]]] = [
+    # Атрибуты идут первыми: путь вида /gifts/backdrops содержит и «gift»,
+    # и «backdrop», а нужен именно разбор по атрибутам.
+    ("filter_floors", ("backdrop", "symbol", "model", "filter", "attribute", "trait")),
     ("collection_floors", ("floor",)),
-    ("filter_floors", ("filter", "attribute", "trait")),
-    ("activity", ("activit", "action", "history", "event", "sale")),
+    ("collections", ("collection",)),
     ("offers", ("offer", "bid")),
     ("balance", ("balance", "wallet")),
-    ("inventory", ("owned", "my", "inventory", "user/gift")),
-    ("collections", ("collection",)),
-    ("listings", ("search", "nft", "gift", "item", "listing")),
+    ("inventory", ("owned", "inventory", "my-gift", "user/gift")),
+    ("activity", ("activit", "history", "deal", "trade", "sale-", "sold")),
+    ("listings", ("saling", "on-sale", "search", "nft", "gift", "item", "listing")),
 ]
+
+#: Пути, которые заведомо не относятся к торговле. Проверяются до
+#: классификации: без них счётчик уведомлений попадал в «ленту сделок»,
+#: а страница статистики конкурировала со списком лотов.
+NOISE_PATHS = (
+    "notification",
+    "unread",
+    "count",
+    "statistic",
+    "team-event",
+    "competition",
+    "questionnaire",
+    "giveaway",
+    "in-app",
+    "await",
+    "is-known",
+    "pulse",
+    "promo",
+    "locale",
+    "config",
+    "banner",
+    "referral",
+    "auth",
+    # Другие товары площадки: звёзды, стикеры, скины, каналы — не подарки.
+    "stars-",
+    "sticker-set",
+    "game-item",
+    "channel",
+)
 
 #: Ключи, под которыми в ответе обычно лежит массив данных.
 ARRAY_KEYS = ("results", "items", "data", "nfts", "gifts", "list", "activities", "collections")
@@ -95,8 +126,15 @@ class HarImportResult:
 
 
 def classify(path: str) -> str | None:
-    """Определяем назначение эндпоинта по его пути."""
+    """Определяем назначение эндпоинта по его пути.
+
+    Сначала отсекаем заведомо посторонние пути. Без этого счётчик
+    непрочитанных уведомлений попадал в «ленту сделок», а страница
+    статистики конкурировала со списком лотов и иногда выигрывала.
+    """
     lowered = path.lower()
+    if any(noise in lowered for noise in NOISE_PATHS):
+        return None
     for name, keywords in CLASSIFIERS:
         if any(keyword in lowered for keyword in keywords):
             return name

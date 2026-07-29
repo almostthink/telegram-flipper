@@ -99,10 +99,22 @@ class Listing:
     listed_at: datetime | None = None
     url: str | None = None
     seen_at: datetime = field(default_factory=utcnow)
+    #: Момент, начиная с которого лот вообще можно перепродать. Площадки
+    #: блокируют свежепереданные подарки на несколько дней — купить такой
+    #: значит заморозить деньги, а не совершить сделку.
+    resale_available_at: datetime | None = None
+    #: Явный признак блокировки, если площадка отдаёт его отдельно.
+    locked: bool = False
 
     @property
     def key(self) -> str:
         return f"{self.market}:{self.listing_id}"
+
+    def resalable_at(self, moment: datetime) -> bool:
+        """Можно ли будет перепродать лот к указанному моменту."""
+        if self.locked:
+            return False
+        return self.resale_available_at is None or self.resale_available_at <= moment
 
 
 @dataclass(slots=True)

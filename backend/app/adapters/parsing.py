@@ -44,6 +44,22 @@ def to_ton(value: Any) -> float | None:
     return number
 
 
+def nano_to_ton(value: Any) -> float | None:
+    """Явный перевод нанотонов в TON.
+
+    Отличается от ``to_ton`` тем, что не угадывает единицу измерения:
+    там, где схема API известна точно, эвристика вредна — цена 0.0009 TON
+    (900 000 нанотонов) по ней была бы принята за нанотоны дважды.
+    """
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number / NANO if number > 0 else None
+
+
 def to_datetime(value: Any) -> datetime | None:
     """Разбираем время в ISO-строке или unix-таймстампе (сек/мс)."""
     if value is None:
@@ -142,7 +158,8 @@ def as_list(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     if isinstance(payload, dict):
-        for key in ("results", "items", "data", "nfts", "list", "activities", "collections"):
+        keys = ("results", "items", "data", "gifts", "nfts", "list", "activities", "collections")
+        for key in keys:
             nested = payload.get(key)
             if isinstance(nested, list):
                 return [item for item in nested if isinstance(item, dict)]
