@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# PyInstaller
+build/dist/
+build/work/
+*.spec.bak
+
+# Runtime data — НИКОГДА не коммитим
+data/
+*.db
+*.db-wal
+*.db-shm
+*.session
+*.session-journal
+.env
+secrets.json
+config.local.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

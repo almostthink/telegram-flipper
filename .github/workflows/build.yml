@@ -1,0 +1,103 @@
+name: build
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+jobs:
+  checks:
+    name: Проверки
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Установка зависимостей
+        run: pip install -r backend/requirements-dev.txt
+
+      - name: Линтер
+        run: ruff check backend
+
+      - name: Тесты
+        run: pytest backend/tests -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Сборка фронтенда
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  windows-exe:
+    name: Сборка GiftFlipper.exe
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Установка зависимостей
+        run: pip install -r backend/requirements-dev.txt
+
+      - name: Сборка фронтенда
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Упаковка в exe
+        run: pyinstaller --noconfirm --clean --distpath build/dist --workpath build/work build/flipper.spec
+
+      - name: Проверка запуска
+        shell: pwsh
+        run: |
+          $proc = Start-Process -FilePath build/dist/GiftFlipper.exe `
+            -ArgumentList '--no-browser','--port','8799' -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..30) {
+              Start-Sleep -Seconds 2
+              try {
+                $r = Invoke-RestMethod http://127.0.0.1:8799/api/v1/health -TimeoutSec 3
+                if ($r.status -eq 'ok') {
+                  Write-Host "health: версия $($r.version), frozen=$($r.frozen)"
+                  if (-not $r.frozen) { throw "exe сообщает frozen=false — статика собрана неверно" }
+                  $ok = $true
+                  break
+                }
+              } catch { }
+            }
+            if (-not $ok) { throw "exe не ответил на /api/v1/health за 60 секунд" }
+
+            $ui = Invoke-WebRequest http://127.0.0.1:8799/ -TimeoutSec 5
+            if ($ui.StatusCode -ne 200) { throw "интерфейс не отдаётся" }
+            Write-Host "интерфейс отдаётся: $($ui.RawContentLength) байт"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GiftFlipper-windows-x64
+          path: build/dist/GiftFlipper.exe
+          retention-days: 30

@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", "frontend", "build/dist", "build/work"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = [
+    "B008",  # Depends() в аргументах по умолчанию — идиома FastAPI
+]
+
+[tool.ruff.lint.per-file-ignores]
+"build/flipper.spec" = ["F821"]  # Analysis/PYZ/EXE вводит сам PyInstaller
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+asyncio_mode = "auto"
