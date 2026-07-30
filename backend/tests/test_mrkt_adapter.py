@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from app.adapters.base import MarketEndpoints
+from app.adapters.base import MarketEndpoints, MarketplaceError
 from app.adapters.har import classify
 from app.adapters.mrkt import (
     BUYER_MARKUP,
@@ -26,7 +26,7 @@ from app.adapters.mrkt import (
     parse_mrkt_gift,
 )
 from app.analytics import pricing
-from app.domain import ActivityKind, AttributeKind, Market
+from app.domain import ActivityKind, AttributeKind, Gift, Listing, Market
 
 FIXTURES = json.loads(
     (Path(__file__).parent / "fixtures" / "mrkt_responses.json").read_text(encoding="utf-8")
@@ -372,3 +372,120 @@ async def test_paging_stops_without_cursor():
     await adapter.activity(limit=500)
 
     assert len(adapter.calls) == 1
+
+
+# --- Торговля ------------------------------------------------------------
+
+
+def test_trading_paths_match_the_mini_app():
+    """Пути взяты из JS-бандла мини-аппа — это исполняемый код кнопок.
+
+    Три из четырёх прежних предположений оказались неверны: /gifts/sell,
+    /gifts/price и /gifts/unlist у площадки не существуют вовсе.
+    """
+    assert DEFAULT_ENDPOINTS.get("buy").path == "/api/v1/gifts/buy"
+    assert DEFAULT_ENDPOINTS.get("sell").path == "/api/v1/gifts/sale"
+    assert DEFAULT_ENDPOINTS.get("change_price").path == "/api/v1/gifts/sale/change-price"
+    assert DEFAULT_ENDPOINTS.get("delist").path == "/api/v1/gifts/sale/cancel"
+    assert DEFAULT_ENDPOINTS.get("inventory").path == "/api/v1/gifts"
+
+
+async def test_buy_sends_ids_and_price_map():
+    """Тело покупки: {ids: [...], prices: {id: нанотоны}} — как в бандле."""
+    gift_id = "00000000-0000-4000-8000-000000000001"
+    adapter = FakeAdapter({"buy": [{"userGift": {"id": gift_id}}]})
+    listing = Listing(
+        market=Market.MRKT,
+        listing_id=gift_id,
+        gift=Gift(collection="Evil Eye", external_id=gift_id),
+        price_ton=12.5,
+    )
+
+    reference = await adapter.buy(listing)
+
+    _, _, body = adapter.calls[0]
+    assert body["ids"] == [gift_id]
+    assert body["prices"] == {gift_id: 12_500_000_000}
+    assert reference == gift_id
+
+
+async def test_empty_buy_response_is_a_failure_not_a_purchase():
+    """Лот перехватили: площадка отвечает 200 и пустым списком.
+
+    Принять это за успех — значит завести позицию по подарку, которого у
+    нас нет, и потом безуспешно пытаться его продать.
+    """
+    gift_id = "00000000-0000-4000-8000-000000000002"
+    adapter = FakeAdapter({"buy": []})
+    listing = Listing(
+        market=Market.MRKT,
+        listing_id=gift_id,
+        gift=Gift(collection="Evil Eye", external_id=gift_id),
+        price_ton=12.5,
+    )
+
+    with pytest.raises(MarketplaceError, match="уже продан"):
+        await adapter.buy(listing)
+
+
+async def test_listing_for_sale_sends_seller_price():
+    """Площадка ждёт цену продавца, а приложение хранит покупательскую."""
+    adapter = FakeAdapter({"sell": {"ids": ["G1"]}})
+    await adapter.list_for_sale("G1", 10.2)
+
+    _, _, body = adapter.calls[0]
+    assert body["ids"] == ["G1"]
+    assert body["price"] == pytest.approx(10_000_000_000, rel=1e-6)
+
+
+async def test_rejected_listing_is_reported():
+    adapter = FakeAdapter({"sell": {"ids": []}})
+    with pytest.raises(MarketplaceError, match="не приняла"):
+        await adapter.list_for_sale("G1", 10.2)
+
+
+async def test_change_price_uses_new_price_field():
+    adapter = FakeAdapter({"change_price": {"ids": ["G1"]}})
+    await adapter.change_price("G1", 10.2)
+
+    _, _, body = adapter.calls[0]
+    assert body["ids"] == ["G1"]
+    assert body["newPrice"] == pytest.approx(10_000_000_000, rel=1e-6)
+
+
+async def test_delist_explains_the_two_minute_cooldown():
+    """Отказ приходит пустым списком — пользователю нужна причина."""
+    adapter = FakeAdapter({"delist": []})
+    with pytest.raises(MarketplaceError, match="откат"):
+        await adapter.delist("G1")
+
+
+async def test_inventory_collects_listed_and_unlisted():
+    """isListed — булево, поэтому нужны оба среза."""
+    gift = FIXTURES["saling"]["gifts"][0]
+    slice_response = {"gifts": [gift], "cursor": "", "total": 1}
+    # Два запроса — два ответа: выставленное и лежащее без дела.
+    adapter = FakeAdapter({"inventory": Pages([slice_response, slice_response])})
+    owned = await adapter.inventory()
+
+    flags = [body["isListed"] for _, _, body in adapter.calls]
+    assert flags == [True, False]
+    assert len(owned) == 2
+
+
+async def test_top_offers_parse_bids():
+    adapter = FakeAdapter(
+        {"orders": [{"collectionName": "Evil Eye", "maxPrice": 9_000_000_000, "count": 3}]}
+    )
+    offers = await adapter.top_offers()
+
+    assert len(offers) == 1
+    assert offers[0].collection == "Evil Eye"
+    assert offers[0].price_ton == pytest.approx(9.0)
+    assert offers[0].amount == 3
+
+
+async def test_unrecognised_offer_response_yields_nothing():
+    """Схема ответа не подтверждена — непонятный ответ не должен ломать скан."""
+    adapter = FakeAdapter({"orders": [{"unexpected": "shape"}]})
+    assert await adapter.top_offers() == []

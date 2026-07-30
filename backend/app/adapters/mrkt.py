@@ -42,6 +42,7 @@ from app.domain import (
     AttributeKind,
     Balance,
     CollectionFloor,
+    CollectionOffer,
     Gift,
     Listing,
     Market,
@@ -73,15 +74,20 @@ DEFAULT_ENDPOINTS = MarketEndpoints(
         # Лента событий рынка. Путь неочевидный — не /activities/, как
         # напрашивалось по счётчику уведомлений, а /feed.
         "activity": EndpointSpec("/api/v1/feed", method="POST", json_path="items"),
-        # --- не подтверждено: в записи этих действий не было ---
-        # Предположения по симметрии с backdrops/symbols.
-        # Правятся импортом HAR без пересборки.
         "models": EndpointSpec("/api/v1/gifts/models", method="POST"),
-        "inventory": EndpointSpec("/api/v1/gifts/my", method="POST", json_path="gifts"),
+        # Торговля. Пути и тела запросов взяты из JS-бандла мини-аппа:
+        # это тот же код, который выполняется при нажатии кнопки «Купить»,
+        # поэтому догадок здесь не осталось. Три из четырёх прежних
+        # предположений были неверны — /gifts/sell, /gifts/price и
+        # /gifts/unlist не существуют.
         "buy": EndpointSpec("/api/v1/gifts/buy", method="POST"),
-        "sell": EndpointSpec("/api/v1/gifts/sell", method="POST"),
-        "change_price": EndpointSpec("/api/v1/gifts/price", method="POST"),
-        "delist": EndpointSpec("/api/v1/gifts/unlist", method="POST"),
+        "sell": EndpointSpec("/api/v1/gifts/sale", method="POST"),
+        "change_price": EndpointSpec("/api/v1/gifts/sale/change-price", method="POST"),
+        "delist": EndpointSpec("/api/v1/gifts/sale/cancel", method="POST"),
+        "inventory": EndpointSpec("/api/v1/gifts", method="POST", json_path="gifts"),
+        # Верхние заявки на покупку по коллекциям — цена гарантированного
+        # выхода. Без них не считается опора спроса в балле ликвидности.
+        "orders": EndpointSpec("/api/v1/orders/all-collection-top"),
     },
 )
 
@@ -292,6 +298,47 @@ class MrktAdapter(Marketplace):
 
         return collected[:limit]
 
+    async def latest_listings(self, *, limit: int = 20) -> list[Listing]:
+        """Свежие лоты по всему рынку — одним запросом к ленте.
+
+        Лента отдаёт события выставления вместе с подарком целиком, так
+        что оценивать лот можно сразу, без похода за карточкой. Это и
+        делает реакцию быстрой: один запрос вместо обхода коллекций.
+
+        Момент выставления берётся из события, а не из ``receivedDate``
+        подарка: второе — когда владелец его получил, и до выставления там
+        могут пройти часы.
+        """
+        body = {
+            **_FEED_QUERY,
+            "count": min(limit, 20),
+            "cursor": "",
+            "type": ["Listing"],
+        }
+        payload = await self.request("activity", json_body=body, raw=True)
+
+        spec = self.endpoints.get("activity")
+        rows = as_list(dig(payload, spec.json_path)) or as_list(payload)
+
+        fresh: list[Listing] = []
+        for raw in rows:
+            gift_raw = raw.get("gift")
+            if not isinstance(gift_raw, dict):
+                continue
+            listing = self._to_listing(gift_raw, "")
+            if listing is None:
+                continue
+            listed_at = to_datetime(pick(raw, "date"))
+            if listed_at is not None:
+                listing.listed_at = listed_at
+            # Цена события свежее той, что лежит в карточке подарка.
+            price = nano_to_ton(pick(raw, "amount"))
+            if price is not None:
+                listing.price_ton = price
+            fresh.append(listing)
+
+        return fresh[:limit]
+
     def _to_listing(self, raw: dict, collection: str) -> Listing | None:
         # Аукционные лоты и уже снятые с продажи в флиппинг не годятся.
         if pick(raw, "isOnAuction") is True or pick(raw, "isOnSale") is False:
@@ -429,6 +476,35 @@ class MrktAdapter(Marketplace):
             seller=_as_str(pick(raw, "sellerId", "seller", "from")),
         )
 
+    async def top_offers(self) -> list[CollectionOffer]:
+        """Верхние заявки по коллекциям: GET /api/v1/orders/all-collection-top.
+
+        Путь взят из бандла, схема ответа — нет: в записи трафика раздел
+        заявок не открывали. Поэтому разбор по списку вероятных имён
+        полей, а неузнанный ответ просто даёт пустой список. Цена ошибки
+        здесь мала: компонент останется отсутствующим, как и был.
+        """
+        payload = await self.request("orders")
+        offers: list[CollectionOffer] = []
+
+        for raw in as_list(payload):
+            name = pick(raw, "collectionName", "collection", "name", "title")
+            price = nano_to_ton(
+                pick(raw, "maxPrice", "topPrice", "price", "amount", "priceNanoTons")
+            )
+            if not name or price is None:
+                continue
+            amount = pick(raw, "count", "amount", "quantity", default=1)
+            offers.append(
+                CollectionOffer(
+                    market=self.name,
+                    collection=str(name),
+                    price_ton=price,
+                    amount=int(amount) if isinstance(amount, int | float) else 1,
+                )
+            )
+        return offers
+
     # --- Торговля -------------------------------------------------------
 
     async def balance(self) -> Balance:
@@ -438,38 +514,60 @@ class MrktAdapter(Marketplace):
         return Balance(market=self.name, ton=nano_to_ton(pick(raw, "totalHard")) or 0.0)
 
     async def inventory(self) -> list[OwnedGift]:
-        payload = await self.request(
-            "inventory", json_body={**_LISTING_QUERY, "count": 100, "cursor": ""}
-        )
+        """Свои подарки. Тело подтверждено бандлом: {isListed, count, cursor}.
+
+        ``isListed=None`` не отдаёт «все» — площадка ждёт булево, поэтому
+        собираем оба среза: выставленные и лежащие без дела.
+        """
         owned: list[OwnedGift] = []
-        for raw in as_list(payload):
-            gift = parse_mrkt_gift(raw)
-            price = nano_to_ton(pick(raw, "salePrice"))
-            owned.append(
-                OwnedGift(
-                    market=self.name,
-                    gift=gift,
-                    listed=bool(pick(raw, "isOnSale")),
-                    price_ton=price,
-                    listing_id=gift.external_id or None,
-                )
-            )
+        for is_listed in (True, False):
+            query = {**_LISTING_QUERY, "isListed": is_listed}
+            async for rows in self._pages("inventory", query, limit=100, max_pages=MAX_PAGES):
+                for raw in rows:
+                    gift = parse_mrkt_gift(raw)
+                    owned.append(
+                        OwnedGift(
+                            market=self.name,
+                            gift=gift,
+                            listed=bool(pick(raw, "isOnSale")),
+                            price_ton=nano_to_ton(pick(raw, "salePrice")),
+                            listing_id=gift.external_id or None,
+                        )
+                    )
         return owned
 
     async def buy(self, listing: Listing) -> str:
-        """Покупка. Цена передаётся покупательская, как её отдаёт площадка."""
+        """Покупка. Тело подтверждено бандлом: {ids: [...], prices: {id: нанотоны}}.
+
+        Цена передаётся покупательская, ровно та, что стоит в ``salePrice``
+        лота — так делает и сам мини-апп.
+
+        **Пустой ответ означает, что лот уже купили.** Площадка отвечает
+        200 и пустым списком, а не ошибкой; мини-апп показывает на это
+        «нет в наличии». Считать такой ответ успехом нельзя: мы записали бы
+        позицию по подарку, которого у нас нет, и дальше пытались бы его
+        продавать.
+        """
         payload = await self.request(
             "buy",
             json_body={
-                "id": listing.listing_id,
-                "price": _to_nano(listing.price_ton),
+                "ids": [listing.listing_id],
+                "prices": {listing.listing_id: _to_nano(listing.price_ton)},
             },
         )
-        raw = payload if isinstance(payload, dict) else {}
-        return str(pick(raw, "id", "transactionId", default=listing.listing_id))
+
+        purchased = as_list(payload)
+        if not purchased:
+            raise MarketplaceError(
+                f"лот {listing.listing_id} уже продан или снят — площадка вернула пустой ответ"
+            )
+
+        first = purchased[0]
+        nested = first.get("userGift") if isinstance(first.get("userGift"), dict) else first
+        return str(pick(nested, "id", default=listing.listing_id))
 
     async def list_for_sale(self, gift_external_id: str, price_ton: float) -> str:
-        """Выставление на продажу.
+        """Выставление на продажу. Тело подтверждено: {ids: [...], price}.
 
         На вход приходит цена, которую увидит покупатель. Площадка ждёт
         цену продавца, поэтому делим на надбавку — иначе лот встанет в
@@ -478,25 +576,50 @@ class MrktAdapter(Marketplace):
         payload = await self.request(
             "sell",
             json_body={
-                "id": gift_external_id,
+                "ids": [gift_external_id],
                 "price": _to_nano(price_ton / BUYER_MARKUP),
             },
         )
-        raw = payload if isinstance(payload, dict) else {}
-        return str(pick(raw, "id", default=gift_external_id))
+        if not _accepted(payload, gift_external_id):
+            raise MarketplaceError(f"площадка не приняла лот {gift_external_id} к продаже")
+        return gift_external_id
 
     async def change_price(self, listing_id: str, price_ton: float) -> None:
         await self.request(
             "change_price",
-            json_body={"id": listing_id, "price": _to_nano(price_ton / BUYER_MARKUP)},
+            json_body={"ids": [listing_id], "newPrice": _to_nano(price_ton / BUYER_MARKUP)},
         )
 
     async def delist(self, listing_id: str) -> None:
-        await self.request("delist", json_body={"id": listing_id})
+        """Снятие с продажи.
+
+        У площадки на это двухминутный откат после выставления: в ответ
+        приходит пустой список, а не ошибка.
+        """
+        payload = await self.request("delist", json_body={"ids": [listing_id]})
+        if not _accepted(payload, listing_id):
+            raise MarketplaceError(
+                f"лот {listing_id} снять не удалось — вероятно, действует "
+                f"двухминутный откат после выставления"
+            )
 
 
 def _to_nano(price_ton: float) -> int:
     return int(round(price_ton * 1_000_000_000))
+
+
+def _accepted(payload: object, gift_id: str) -> bool:
+    """Приняла ли площадка операцию над лотом.
+
+    Ответ бывает двух форм: ``{"ids": [...]}`` у выставления и просто
+    список у снятия. В обеих пустота означает отказ, а не успех — ошибку
+    площадка при этом не возвращает.
+    """
+    if isinstance(payload, dict):
+        return bool(payload.get("ids"))
+    if isinstance(payload, list):
+        return bool(payload)
+    return False
 
 
 def _as_float(value: object) -> float | None:

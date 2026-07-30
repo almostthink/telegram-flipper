@@ -159,6 +159,11 @@ class FloorSnapshot(Base):
     volume_24h_ton: Mapped[float | None] = mapped_column(Float)
     sales_24h: Mapped[int | None] = mapped_column(Integer)
     listed_count: Mapped[int | None] = mapped_column(Integer)
+    #: Верхняя заявка на покупку — цена, по которой можно выйти прямо
+    #: сейчас. Хранится рядом с флором, потому что снимается тем же
+    #: широким проходом и осмысленна только в паре с ним: важен не сам
+    #: бид, а насколько он отстаёт от флора.
+    best_offer_ton: Mapped[float | None] = mapped_column(Float)
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )

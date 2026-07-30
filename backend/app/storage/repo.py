@@ -84,6 +84,24 @@ async def upsert_listings(session: AsyncSession, listings: list[Listing]) -> int
     return len(rows)
 
 
+async def known_listing_ids(
+    session: AsyncSession, market: str, listing_ids: list[str]
+) -> set[str]:
+    """Какие из этих лотов мы уже видели.
+
+    Быстрая петля обязана отличать новое предложение от повторно
+    показанного: без этого она переоценивала бы одни и те же лоты каждые
+    несколько секунд и упиралась бы в них вместо реакции на свежие.
+    """
+    if not listing_ids:
+        return set()
+    query = select(ListingSnapshot.listing_id).where(
+        ListingSnapshot.market == market,
+        ListingSnapshot.listing_id.in_(listing_ids),
+    )
+    return set((await session.execute(query)).scalars())
+
+
 async def mark_gone(
     session: AsyncSession, market: str, collection: str, alive_ids: set[str]
 ) -> list[ListingSnapshot]:
@@ -272,9 +290,21 @@ def _hours_between(listed_at: datetime | None, sold_at: datetime | None) -> floa
     return None if hours > 24 * 30 else hours
 
 
-async def record_floors(session: AsyncSession, floors: list[CollectionFloor]) -> int:
+async def record_floors(
+    session: AsyncSession,
+    floors: list[CollectionFloor],
+    *,
+    offers: dict[str, float] | None = None,
+) -> int:
+    """Пишем флоры, а вместе с ними верхние заявки на покупку.
+
+    Заявки приходят отдельным запросом, но снимаются тем же проходом и
+    имеют смысл только рядом с флором — отставание бида от флора и есть
+    опора спроса.
+    """
     if not floors:
         return 0
+    best = offers or {}
     session.add_all(
         [
             FloorSnapshot(
@@ -284,6 +314,7 @@ async def record_floors(session: AsyncSession, floors: list[CollectionFloor]) ->
                 volume_24h_ton=item.volume_24h_ton,
                 sales_24h=item.sales_24h,
                 listed_count=item.listed_count,
+                best_offer_ton=best.get(item.collection),
                 captured_at=item.captured_at,
             )
             for item in floors
@@ -340,6 +371,67 @@ async def latest_floor(session: AsyncSession, collection: str) -> float | None:
     cutoff = utcnow() - timedelta(hours=1)
     query = select(func.min(FloorSnapshot.floor_ton)).where(
         FloorSnapshot.collection == collection, FloorSnapshot.captured_at >= cutoff
+    )
+    return (await session.execute(query)).scalar()
+
+
+async def seed_previous_day_floors(
+    session: AsyncSession, market: str, floors: dict[str, float]
+) -> int:
+    """Записываем вчерашние флоры, которые площадка отдаёт сама.
+
+    Своя история начинается с первого запуска, а фильтр «падающего ножа»
+    сравнивает текущий флор со вчерашним. Без этого в первые сутки работы
+    он не срабатывает вовсе: сравнивать не с чем, и приложение молча
+    пропускает обвал.
+
+    Это не выдумка задним числом: площадка сообщает измеренное значение,
+    и мы кладём его на тот момент, к которому оно относится. Сеяние само
+    прекращается, как только накопится своя история.
+    """
+    if not floors:
+        return 0
+
+    moment = utcnow() - timedelta(hours=24)
+    # Если по коллекции уже есть наблюдение той поры — своё, и оно точнее.
+    covered = set(
+        (
+            await session.execute(
+                select(FloorSnapshot.collection).where(
+                    FloorSnapshot.market == market,
+                    FloorSnapshot.collection.in_(list(floors)),
+                    FloorSnapshot.captured_at <= utcnow() - timedelta(hours=20),
+                )
+            )
+        ).scalars()
+    )
+
+    rows = [
+        FloorSnapshot(
+            market=market,
+            collection=collection,
+            floor_ton=value,
+            captured_at=moment,
+        )
+        for collection, value in floors.items()
+        if collection not in covered and value > 0
+    ]
+    session.add_all(rows)
+    return len(rows)
+
+
+async def best_offer(session: AsyncSession, collection: str) -> float | None:
+    """Лучшая заявка на покупку за последний час.
+
+    Максимум по площадкам: выходить будем туда, где дают больше. None
+    означает «данных нет» — и это не то же самое, что «спроса нет»:
+    ликвидность в первом случае исключает компонент, а не обнуляет его.
+    """
+    cutoff = utcnow() - timedelta(hours=1)
+    query = select(func.max(FloorSnapshot.best_offer_ton)).where(
+        FloorSnapshot.collection == collection,
+        FloorSnapshot.captured_at >= cutoff,
+        FloorSnapshot.best_offer_ton.is_not(None),
     )
     return (await session.execute(query)).scalar()
 

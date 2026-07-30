@@ -35,8 +35,19 @@ export interface EngineStatus {
   paper_mode: boolean
   auto_trade: boolean
   risk: RiskStatus
+  balance_ton: number | null
   disabled_markets: Record<string, string>
   breakeven_markup: number
+  watch_enabled: boolean
+  watch_interval_sec: number
+  last_watch: {
+    seen: number
+    evaluated: number
+    passed: number
+    bought: number
+    blocked: string[]
+    errors: string[]
+  }
   last_cycle: {
     signals_total: number
     signals_passed: number
@@ -231,6 +242,8 @@ export interface JournalEntry {
 export interface AppConfig {
   paper_mode: boolean
   auto_trade: boolean
+  watch_enabled: boolean
+  watch_interval_sec: number
   analytics: Record<string, number>
   collectible: {
     number_bonus: number

@@ -443,9 +443,12 @@ function UserbotCard({
 
       {!available ? (
         <Alert tone="warn">
-          Pyrogram не установлен. Установите <code>pip install pyrogram tgcrypto</code>{' '}
-          или пользуйтесь ручным вводом токена — он работает без дополнительных
-          зависимостей.
+          Pyrogram не установлен. Установите <code>pip install pyrogram</code> — именно
+          так, без <code>tgcrypto</code>: это C-расширение без готовых сборок под свежий
+          Python, оно пытается компилироваться и падает без Visual Studio Build Tools.
+          Pyrogram работает и без него, просто медленнее шифрует, и на один запрос
+          токена это не влияет. Либо пользуйтесь ручным вводом токена — он работает
+          без дополнительных зависимостей вовсе.
         </Alert>
       ) : (
         <div className="space-y-2">

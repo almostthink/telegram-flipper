@@ -96,8 +96,10 @@ async def set_credentials(request: CredentialsRequest) -> dict:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Pyrogram не установлен. Установите: pip install pyrogram tgcrypto — "
-                "или используйте ручной ввод токена."
+                "Pyrogram не установлен. Установите: pip install pyrogram — "
+                "или используйте ручной ввод токена. TgCrypto не нужен: он "
+                "только ускоряет шифрование, а собрать его без компилятора "
+                "не получится."
             ),
         )
     try:

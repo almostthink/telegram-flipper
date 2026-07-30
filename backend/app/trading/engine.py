@@ -32,6 +32,7 @@ from app.storage.db import session_scope
 from app.storage.models import Position
 from app.trading.executor import Executor
 from app.trading.risk import RiskManager
+from app.trading.wallet import BalanceTracker
 
 log = logging.getLogger(__name__)
 
@@ -60,20 +61,48 @@ class CycleReport:
         }
 
 
+@dataclass
+class WatchReport:
+    """Итог одного тика быстрой петли."""
+
+    #: Сколько лотов появилось на рынке с прошлого тика.
+    seen: int = 0
+    #: Из них дошло до оценки — те, чья коллекция уже отслеживается.
+    evaluated: int = 0
+    passed: int = 0
+    bought: int = 0
+    blocked: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "seen": self.seen,
+            "evaluated": self.evaluated,
+            "passed": self.passed,
+            "bought": self.bought,
+            "blocked": self.blocked[:10],
+            "errors": self.errors[:10],
+        }
+
+
 class TradingEngine:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.scanner = Scanner(settings)
         self.executor = Executor(settings)
         self.risk = RiskManager(settings.risk)
+        self.wallet = BalanceTracker(settings)
         self.last_signals: list[Signal] = []
         self.last_report = CycleReport()
+        self.last_watch = WatchReport()
         self.running = False
+        self.watching = False
 
     def reload_settings(self, settings: Settings) -> None:
         self.settings = settings
         self.scanner.settings = settings
         self.executor.settings = settings
+        self.wallet.settings = settings
         self.risk.update_limits(settings.risk)
 
     # --- Основной цикл ---------------------------------------------------
@@ -99,6 +128,7 @@ class TradingEngine:
             report.signals_passed = sum(1 for signal in signals if signal.passed)
 
             await self.risk.refresh(paper=self.settings.paper_mode)
+            await self.wallet.refresh()
 
             if self.settings.auto_trade:
                 await self._auto_buy(signals, report)
@@ -120,6 +150,87 @@ class TradingEngine:
         await hub.broadcast("cycle", report.as_dict())
         return report
 
+    # --- Быстрая петля ---------------------------------------------------
+
+    async def run_watch(self) -> WatchReport:
+        """Реакция на свежие лоты.
+
+        Плановый цикл ходит раз в двадцать минут — для флиппинга это
+        вечность: недооценённый лот разбирают за секунды. Здесь путь
+        короткий: один запрос к ленте, пересчёт только затронутых
+        коллекций, покупка через те же проверки, что и в основном цикле.
+
+        Оценка опирается на данные, собранные медленными петлями: флоры,
+        флоры атрибутов, историю сделок. Быстрая петля их не собирает —
+        она только замечает новое предложение и прикладывает к нему уже
+        готовую модель.
+        """
+        report = WatchReport()
+        if self.watching:
+            # Предыдущий тик ещё идёт: рынок ушёл вперёд, догонять незачем.
+            return self.last_watch
+
+        self.watching = True
+        try:
+            scan, fresh = await self.scanner.scan_new_listings()
+            report.seen = scan.new_listings
+            report.errors.extend(scan.errors)
+            if not fresh:
+                return report
+
+            signals: list[Signal] = []
+            for collection, listing_ids in fresh.items():
+                wanted = set(listing_ids)
+                try:
+                    evaluated = await pipeline.evaluate_one(self.settings, collection)
+                except Exception as exc:  # noqa: BLE001 — одна коллекция не роняет тик
+                    log.exception("Быстрая оценка %s не удалась", collection)
+                    report.errors.append(f"{collection}: {exc}")
+                    continue
+                # Из коллекции берём только те лоты, которые появились
+                # сейчас: остальные уже рассматривались плановым циклом.
+                signals.extend(
+                    signal
+                    for signal in evaluated
+                    if signal.listing.listing_id in wanted
+                )
+
+            report.evaluated = len(signals)
+            passed = [signal for signal in signals if signal.passed]
+            report.passed = len(passed)
+            if passed:
+                await pipeline.persist(passed)
+                self.last_signals = passed + self.last_signals[:200]
+
+            if passed and self.settings.auto_trade:
+                await self._buy_fresh(passed, report)
+
+        except Exception as exc:  # noqa: BLE001 — петля не должна падать
+            log.exception("Ошибка быстрой петли")
+            report.errors.append(str(exc))
+        finally:
+            self.watching = False
+            self.last_watch = report
+
+        if report.bought:
+            await hub.broadcast("watch", report.as_dict())
+        return report
+
+    async def _buy_fresh(self, signals: list[Signal], report: WatchReport) -> None:
+        if self.risk.state.tripped:
+            report.blocked.append(f"предохранитель: {self.risk.state.trip_reason}")
+            return
+
+        # Сначала самые выгодные: на всех денег всё равно не хватит.
+        for signal in sorted(signals, key=lambda s: s.score, reverse=True):
+            ok, detail = await self.attempt_buy(signal, auto=True, note="быстрая петля")
+            if ok:
+                report.bought += 1
+            elif detail:
+                report.blocked.append(f"{signal.listing.collection}: {detail}")
+                if self.risk.state.tripped:
+                    break
+
     # --- Покупка ---------------------------------------------------------
 
     async def _auto_buy(self, signals: list[Signal], report: CycleReport) -> None:
@@ -132,37 +243,57 @@ class TradingEngine:
             if not signal.passed:
                 continue
 
-            decision = self.risk.can_buy(
-                signal.listing.collection, signal.listing.price_ton, auto=True
-            )
-            if not decision:
-                report.blocked.append(f"{signal.listing.collection}: {decision.reason}")
-                continue
-
-            result = await self.executor.buy(
-                signal.listing,
-                fair_value=signal.fair.value_ton,
-                expected_tts=signal.liquidity.expected_tts_hours,
-                reason=signal.explanation,
-            )
-
-            if result.ok:
-                self.risk.register_buy(signal.listing.collection, signal.listing.price_ton)
-                self.risk.register_success()
+            ok, detail = await self.attempt_buy(signal, auto=True)
+            if ok:
                 report.bought += 1
-                await hub.broadcast(
-                    "position_opened",
-                    {
-                        "collection": signal.listing.collection,
-                        "price_ton": signal.listing.price_ton,
-                        "roi": signal.net_roi,
-                    },
-                )
-            else:
-                self.risk.register_error()
-                report.errors.append(result.detail)
+            elif detail:
+                report.blocked.append(f"{signal.listing.collection}: {detail}")
                 if self.risk.state.tripped:
                     break
+
+    async def attempt_buy(
+        self, signal: Signal, *, auto: bool, note: str = ""
+    ) -> tuple[bool, str]:
+        """Одна попытка покупки под всеми проверками.
+
+        Общая точка для планового цикла, быстрой петли и кнопки в
+        интерфейсе: проверки должны быть одни и те же, иначе быстрый путь
+        рано или поздно разойдётся с медленным и обойдёт лимит.
+        """
+        listing = signal.listing
+
+        decision = self.risk.can_buy(listing.collection, listing.price_ton, auto=auto)
+        if not decision:
+            return False, decision.reason
+
+        shortfall = self.wallet.shortfall(listing.market, listing.price_ton)
+        if shortfall:
+            return False, shortfall
+
+        reason = signal.explanation if not note else f"{note} · {signal.explanation}"
+        result = await self.executor.buy(
+            listing,
+            fair_value=signal.fair.value_ton,
+            expected_tts=signal.liquidity.expected_tts_hours,
+            reason=reason,
+        )
+
+        if not result.ok:
+            self.risk.register_error()
+            return False, result.detail
+
+        self.risk.register_buy(listing.collection, listing.price_ton)
+        self.risk.register_success()
+        self.wallet.reserve(listing.market, listing.price_ton)
+        await hub.broadcast(
+            "position_opened",
+            {
+                "collection": listing.collection,
+                "price_ton": listing.price_ton,
+                "roi": signal.net_roi,
+            },
+        )
+        return True, result.detail
 
     async def buy_manually(self, listing_id: str, market: str) -> tuple[bool, str]:
         """Покупка по кнопке из интерфейса.
@@ -183,21 +314,8 @@ class TradingEngine:
             return False, "сигнал не найден или устарел — обновите список"
 
         await self.risk.refresh(paper=self.settings.paper_mode)
-        decision = self.risk.can_buy(
-            signal.listing.collection, signal.listing.price_ton, auto=False
-        )
-        if not decision:
-            return False, decision.reason
-
-        result = await self.executor.buy(
-            signal.listing,
-            fair_value=signal.fair.value_ton,
-            expected_tts=signal.liquidity.expected_tts_hours,
-            reason=f"вручную · {signal.explanation}",
-        )
-        if result.ok:
-            self.risk.register_buy(signal.listing.collection, signal.listing.price_ton)
-        return result.ok, result.detail
+        await self.wallet.refresh()
+        return await self.attempt_buy(signal, auto=False, note="вручную")
 
     # --- Сопровождение позиций -------------------------------------------
 
@@ -312,7 +430,11 @@ class TradingEngine:
                 "trip_reason": self.risk.state.trip_reason,
                 "consecutive_errors": self.risk.state.consecutive_errors,
             },
+            "balance_ton": self.wallet.total_ton,
             "disabled_markets": self.scanner.disabled_markets,
+            "watch_enabled": self.settings.watch_enabled,
+            "watch_interval_sec": self.settings.watch_interval_sec,
+            "last_watch": self.last_watch.as_dict(),
             "last_cycle": self.last_report.as_dict(),
             "breakeven_markup": round(
                 pricing.breakeven_markup(

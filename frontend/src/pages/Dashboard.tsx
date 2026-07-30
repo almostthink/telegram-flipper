@@ -88,9 +88,40 @@ export default function Dashboard() {
           hint={`вложено ${ton(data.invested_ton)}`}
         />
         <Stat
+          label="Баланс площадки"
+          value={data.balance_ton == null ? '—' : ton(data.balance_ton)}
+          hint={
+            data.balance_ton == null
+              ? 'в бумажном режиме не запрашивается'
+              : `бюджет: ${ton(risk.spent_today_ton)} из ${ton(risk.daily_budget_ton)}`
+          }
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat
           label="Сигналов к покупке"
           value={data.signals_pending}
           hint={`бюджет: ${ton(risk.spent_today_ton)} из ${ton(risk.daily_budget_ton)}`}
+        />
+        <Stat
+          label="Новых лотов за тик"
+          value={engine.last_watch.seen}
+          hint={
+            engine.watch_enabled
+              ? `быстрая петля, раз в ${engine.watch_interval_sec.toFixed(0)}с`
+              : 'быстрая петля выключена'
+          }
+        />
+        <Stat
+          label="Из них прошло отбор"
+          value={engine.last_watch.passed}
+          hint={`куплено сразу: ${engine.last_watch.bought}`}
+        />
+        <Stat
+          label="Оценено в тике"
+          value={engine.last_watch.evaluated}
+          hint="только новые лоты отслеживаемых коллекций"
         />
       </div>
 

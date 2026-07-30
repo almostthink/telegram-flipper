@@ -217,3 +217,93 @@ async def test_events_without_gift_id_are_skipped(db):
     )
     async with session_scope() as session:
         assert await repo.record_listing_events(session, [anonymous]) == 0
+
+
+# --- Опора спроса ---------------------------------------------------------
+
+
+async def test_best_offer_reaches_liquidity(db):
+    """Заявка на покупку должна доходить до балла, а не теряться по пути.
+
+    Компонент bid_support весит 20%, и до подключения книги заявок он
+    всегда отсутствовал — балл считался по трём компонентам из четырёх.
+    """
+    from app.analytics import liquidity as liquidity_mod
+    from app.domain import CollectionFloor, Market
+
+    async with session_scope() as session:
+        await repo.record_floors(
+            session,
+            [CollectionFloor(market=Market.MRKT, collection="Lush Bouquet", floor_ton=10.0)],
+            offers={"Lush Bouquet": 9.0},
+        )
+
+    async with session_scope() as session:
+        assert await repo.best_offer(session, "Lush Bouquet") == pytest.approx(9.0)
+
+    measured = liquidity_mod.compute(
+        "Lush Bouquet", sales=[], listings=[], floor_ton=10.0, best_offer_ton=9.0
+    )
+    assert "bid_support" not in measured.missing
+    assert measured.parts["bid_support"] > 0
+
+
+async def test_missing_offer_stays_unknown_not_zero(db):
+    """Нет данных — компонент исключается, а не обнуляет коллекцию."""
+    from app.analytics import liquidity as liquidity_mod
+    from app.domain import CollectionFloor, Market
+
+    async with session_scope() as session:
+        await repo.record_floors(
+            session,
+            [CollectionFloor(market=Market.MRKT, collection="Ice Cream", floor_ton=10.0)],
+        )
+
+    async with session_scope() as session:
+        assert await repo.best_offer(session, "Ice Cream") is None
+
+    metrics = liquidity_mod.compute("Ice Cream", sales=[], listings=[], floor_ton=10.0)
+    assert "bid_support" in metrics.missing
+
+
+# --- Вчерашний флор -------------------------------------------------------
+
+
+async def test_previous_day_floor_enables_the_falling_knife_filter(db):
+    """Фильтр обвала сравнивает с флором суток назад.
+
+    Своя история начинается с первого запуска, поэтому в первые сутки
+    сравнивать было не с чем и фильтр молча пропускал падение.
+    """
+    async with session_scope() as session:
+        assert await repo.seed_previous_day_floors(
+            session, "mrkt", {"Lush Bouquet": 12.0}
+        ) == 1
+
+    async with session_scope() as session:
+        assert await repo.floor_at(session, "Lush Bouquet", hours_ago=24) == pytest.approx(12.0)
+
+
+async def test_own_history_wins_over_seeding(db):
+    """Накопив свои наблюдения, площадку об этом больше не спрашиваем."""
+    from app.storage.models import FloorSnapshot
+
+    async with session_scope() as session:
+        session.add(
+            FloorSnapshot(
+                market="mrkt",
+                collection="Lush Bouquet",
+                floor_ton=11.0,
+                captured_at=utcnow() - timedelta(hours=25),
+            )
+        )
+
+    async with session_scope() as session:
+        assert await repo.seed_previous_day_floors(
+            session, "mrkt", {"Lush Bouquet": 99.0}
+        ) == 0
+
+
+async def test_zero_floor_is_not_seeded(db):
+    async with session_scope() as session:
+        assert await repo.seed_previous_day_floors(session, "mrkt", {"Dead": 0.0}) == 0

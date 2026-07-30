@@ -89,6 +89,43 @@ export default function AutoTrade() {
         </div>
       </div>
 
+      <div className="card mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium text-slate-200">
+              Быстрая петля {data.watch_enabled ? 'включена' : 'выключена'}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Плановый цикл идёт раз в 20 минут — недооценённый лот столько не живёт.
+              Быстрая петля берёт ленту свежих лотов одним запросом раз в{' '}
+              {data.watch_interval_sec.toFixed(0)} с и оценивает только новые.
+              Покупает лишь при включённом автомате и под теми же лимитами.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              className="rounded-lg bg-ink-700 px-3 py-2 text-sm text-slate-200"
+              value={data.watch_interval_sec}
+              onChange={(event) =>
+                void patch({ watch_interval_sec: Number(event.target.value) })
+              }
+            >
+              {[5, 10, 15, 30, 60].map((seconds) => (
+                <option key={seconds} value={seconds}>
+                  раз в {seconds} с
+                </option>
+              ))}
+            </select>
+            <Button
+              variant={data.watch_enabled ? 'danger' : 'primary'}
+              onClick={() => void patch({ watch_enabled: !data.watch_enabled })}
+            >
+              {data.watch_enabled ? 'Выключить' : 'Включить'}
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat
           label="Потрачено за сутки"

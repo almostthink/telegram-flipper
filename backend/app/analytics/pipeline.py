@@ -69,6 +69,7 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
 
         floor_24h_ago = await repo.floor_at(session, collection, hours_ago=24)
         attribute_floors = await repo.attribute_floor_map(session, collection)
+        top_bid = await repo.best_offer(session, collection)
 
     clean_sales = [sale for sale in sales if not sale.suspicious]
 
@@ -77,6 +78,7 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
         sales=clean_sales,
         listings=listings,
         floor_ton=floor,
+        best_offer_ton=top_bid,
         floor_24h_ago=floor_24h_ago,
     )
 

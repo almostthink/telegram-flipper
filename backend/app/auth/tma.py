@@ -237,7 +237,10 @@ class TmaAuth:
             from pyrogram.raw.types import InputBotAppShortName
         except ImportError as exc:
             raise RuntimeError(
-                "Pyrogram не установлен. Установите: pip install pyrogram tgcrypto"
+                "Pyrogram не установлен. Установите: pip install pyrogram. "
+                "TgCrypto ставить не нужно: он только ускоряет шифрование, "
+                "колёс под свежий Python у него нет, и без компилятора "
+                "установка падает."
             ) from exc
 
         from app import paths

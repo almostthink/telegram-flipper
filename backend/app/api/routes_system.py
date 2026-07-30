@@ -54,9 +54,19 @@ async def update_config(patch: dict) -> Settings:
     if updated.auto_trade and (updated.paper_mode or not updated.risk.collection_whitelist):
         updated.auto_trade = False
 
+    interval_changed = updated.watch_interval_sec != settings.watch_interval_sec
+
     for field in updated.model_fields:
         setattr(settings, field, getattr(updated, field))
     settings.save()
+
+    if interval_changed:
+        # Иначе новое значение легло бы в конфиг и не подействовало
+        # до перезапуска приложения.
+        from app import scheduler
+
+        scheduler.reschedule_watch(settings.watch_interval_sec)
+
     return settings
 
 
@@ -99,7 +109,9 @@ async def status() -> dict:
 
     return {
         "stage": "все этапы реализованы",
-        "balance_ton": None,
+        # None означает «не измерен»: в бумажном режиме баланс не
+        # запрашивается вовсе, а в живом мог не ответить запрос.
+        "balance_ton": engine.wallet.total_ton,
         "open_positions": trading.open_positions,
         "realized_pnl_ton": round(trading.realized_pnl_ton, 3),
         "unrealized_pnl_ton": round(trading.unrealized_pnl_ton, 3),

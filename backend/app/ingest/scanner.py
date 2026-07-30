@@ -34,6 +34,11 @@ DEEP_SCAN_COLLECTIONS = 25
 #: Максимум листингов на коллекцию — дальше цены уже не флип-зона.
 LISTINGS_PER_COLLECTION = 100
 
+#: Сколько свежих лотов забирать за один тик быстрой петли. Столько же
+#: отдаёт страница ленты, и при тике в десяток секунд этого хватает с
+#: запасом: больше двадцати новых лотов за тик рынок не выдаёт.
+NEW_LISTINGS_LIMIT = 20
+
 #: После скольких неудач подряд площадка уходит на паузу. Неверный адрес
 #: или упавший сервис не чинятся повторением запроса: сканер лишь копит
 #: таймауты и засоряет журнал одной и той же ошибкой каждые пять минут.
@@ -47,7 +52,10 @@ BACKOFF_MINUTES = (15, 30, 60, 120)
 @dataclass
 class ScanStats:
     floors: int = 0
+    seeded_floors: int = 0
+    offers: int = 0
     listings: int = 0
+    new_listings: int = 0
     sales: int = 0
     listing_events: int = 0
     attribute_floors: int = 0
@@ -57,7 +65,10 @@ class ScanStats:
 
     def merge(self, other: ScanStats) -> None:
         self.floors += other.floors
+        self.seeded_floors += other.seeded_floors
+        self.offers += other.offers
         self.listings += other.listings
+        self.new_listings += other.new_listings
         self.sales += other.sales
         self.listing_events += other.listing_events
         self.attribute_floors += other.attribute_floors
@@ -98,8 +109,14 @@ class Scanner:
             try:
                 async with adapter:
                     floors = await adapter.collection_floors()
+                    offers = await self._top_offers(adapter)
+                    previous = await self._previous_day_floors(adapter)
                 async with session_scope() as session:
-                    stats.floors += await repo.record_floors(session, floors)
+                    stats.floors += await repo.record_floors(session, floors, offers=offers)
+                    stats.seeded_floors += await repo.seed_previous_day_floors(
+                        session, market.value, previous
+                    )
+                stats.offers += len(offers)
                 self._note_success(market)
             except AuthExpired as exc:
                 await self._handle_auth_expired(market, exc, stats)
@@ -115,6 +132,87 @@ class Scanner:
         )
         self.last_stats = stats
         return stats
+
+    @staticmethod
+    async def _previous_day_floors(adapter: Marketplace) -> dict[str, float]:
+        """Вчерашние флоры, если площадка их отдаёт. Умеет только MRKT."""
+        getter = getattr(adapter, "previous_day_floors", None)
+        if getter is None:
+            return {}
+        try:
+            return await getter()
+        except (MarketplaceError, ValueError) as exc:
+            log.debug("%s: вчерашние флоры недоступны — %s", adapter.name.value, exc)
+            return {}
+
+    @staticmethod
+    async def _top_offers(adapter: Marketplace) -> dict[str, float]:
+        """Верхние заявки по коллекциям. Их отсутствие не должно ронять скан.
+
+        Схема ответа подтверждена не у всех площадок, а флоры важнее: без
+        них не работает вообще ничего, а без заявок лишь исключается один
+        компонент ликвидности.
+        """
+        try:
+            offers = await adapter.top_offers()
+        except (MarketplaceError, ValueError) as exc:
+            log.debug("%s: заявки недоступны — %s", adapter.name.value, exc)
+            return {}
+
+        best: dict[str, float] = {}
+        for offer in offers:
+            if offer.price_ton > best.get(offer.collection, 0.0):
+                best[offer.collection] = offer.price_ton
+        return best
+
+    # --- Быстрая петля ---------------------------------------------------
+
+    async def scan_new_listings(self) -> tuple[ScanStats, dict[str, list[str]]]:
+        """Свежие лоты по всему рынку. Возвращает статистику и что нового.
+
+        Второе значение — новые лоты по коллекциям: ``{коллекция: [id]}``.
+        Именно по ним стоит пересчитывать сигналы, а не по всему рынку:
+        полный пересчёт занимает секунды, которых у флиппера нет.
+        """
+        stats = ScanStats()
+        fresh: dict[str, list[str]] = {}
+        adapters = registry.build_enabled(self.settings)
+
+        for market, adapter in adapters.items():
+            cfg = self.settings.marketplaces.get(market.value)
+            # Смотрим только там, где можем купить: реакция на площадке,
+            # где торговля выключена, ни к чему не приведёт.
+            if not cfg or not cfg.trade_enabled or self._is_paused(market):
+                continue
+
+            try:
+                async with adapter:
+                    listings = await adapter.latest_listings(limit=NEW_LISTINGS_LIMIT)
+            except AuthExpired as exc:
+                await self._handle_auth_expired(market, exc, stats)
+                continue
+            except MarketplaceError as exc:
+                self._note_failure(market, str(exc), stats)
+                continue
+
+            if not listings:
+                continue
+
+            async with session_scope() as session:
+                known = await repo.known_listing_ids(
+                    session, market.value, [item.listing_id for item in listings]
+                )
+                stats.listings += await repo.upsert_listings(session, listings)
+
+            for listing in listings:
+                if listing.listing_id in known:
+                    continue
+                fresh.setdefault(listing.gift.collection, []).append(listing.listing_id)
+                stats.new_listings += 1
+
+            self._note_success(market)
+
+        return stats, fresh
 
     # --- Глубокая петля --------------------------------------------------
 

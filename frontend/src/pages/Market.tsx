@@ -152,7 +152,14 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
 
       {data.floor_history.length > 1 && (
         <div className="card">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Флор за 14 дней</h2>
+          {/* Окно запроса — 14 дней, но данные только свои: график
+              начинается с первого запуска, а не с истории площадки. */}
+          <h2 className="mb-3 text-sm font-medium text-slate-300">
+            Флор — собственные наблюдения
+            <span className="ml-2 text-xs text-slate-500">
+              с {new Date(data.floor_history[0].t).toLocaleString('ru')}
+            </span>
+          </h2>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data.floor_history}>

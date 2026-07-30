@@ -150,6 +150,14 @@ class Settings(BaseSettings):
     #: Тумблер автомата. Работает только при paper_mode=False и заполненном whitelist.
     auto_trade: bool = False
 
+    # --- Быстрая петля ---
+    #: Реакция на свежие лоты между плановыми циклами. Один запрос к ленте
+    #: за тик, поэтому дёшево; выключается, если площадка ругается на частоту.
+    watch_enabled: bool = True
+    #: Период тика, секунды. Меньше пяти ставить не стоит: пауза между
+    #: запросами к площадке и так около секунды, а частый опрос заметен.
+    watch_interval_sec: float = Field(default=15.0, ge=5.0, le=300.0)
+
     # --- Секции ---
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
     collectible: CollectibleConfig = Field(default_factory=CollectibleConfig)
