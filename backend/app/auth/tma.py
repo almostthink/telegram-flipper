@@ -25,9 +25,11 @@ exe несёт своё окружение и системный site-packages �
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from app.auth.vault import vault
 from app.domain import Market
@@ -46,6 +48,15 @@ DEFAULT_TTL_SEC = 24 * 3600
 
 #: Имя файла сессии Telegram в папке данных.
 SESSION_NAME = "flipper"
+
+#: Сколько ждать ответа Telegram на шаге входа. Своими средствами
+#: Pyrogram повторяет подключение бесконечно, и запрос из интерфейса
+#: висел бы вечно — вместо внятного «Telegram недоступен».
+LOGIN_TIMEOUT_SEC = 25.0
+
+#: Сколько раз пробовать удалить файл сессии. Windows держит его
+#: заблокированным, пока клиент не отпустит, а отпускает он не мгновенно.
+UNLINK_ATTEMPTS = 5
 
 #: Схемы авторизации различаются, и путать их нельзя.
 #:
@@ -83,6 +94,31 @@ TRACKING_COOKIE_PREFIXES = (
 
 #: Имена, по которым видно, что в строке действительно есть авторизация.
 AUTH_COOKIE_MARKERS = ("auth_token", "jwt_token", "token", "session")
+
+
+def parse_proxy(url: str) -> dict | None:
+    """Разбираем адрес прокси в вид, который ждёт Pyrogram.
+
+    Формат обычный: ``socks5://логин:пароль@хост:порт``. Логин и пароль
+    необязательны.
+    """
+    value = (url or "").strip()
+    if not value:
+        return None
+
+    parsed = urlparse(value)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in ("socks5", "socks4", "http"):
+        raise ValueError("Поддерживаются схемы socks5, socks4 и http")
+    if not parsed.hostname or not parsed.port:
+        raise ValueError("Укажите адрес и порт: socks5://хост:порт")
+
+    proxy = {"scheme": scheme, "hostname": parsed.hostname, "port": int(parsed.port)}
+    if parsed.username:
+        proxy["username"] = parsed.username
+    if parsed.password:
+        proxy["password"] = parsed.password
+    return proxy
 
 
 def clean_cookie_string(value: str) -> str:
@@ -261,6 +297,22 @@ class TmaAuth:
         """Выполнен ли вход в Telegram."""
         return self.session_path().exists()
 
+    def save_proxy(self, url: str) -> None:
+        """Прокси для подключения к Telegram.
+
+        На части сетей Telegram недоступен напрямую, и без прокси вход не
+        состоится вовсе: Pyrogram будет бесконечно повторять подключение.
+        """
+        value = url.strip()
+        if value:
+            parse_proxy(value)  # проверяем формат до сохранения
+            vault.set("tg_proxy", value)
+        else:
+            vault.delete("tg_proxy")
+
+    def proxy_url(self) -> str:
+        return vault.get("tg_proxy") or ""
+
     def _new_client(self):
         from pyrogram import Client
 
@@ -271,6 +323,7 @@ class TmaAuth:
             api_id=int(vault.get("tg_api_id") or 0),
             api_hash=vault.get("tg_api_hash") or "",
             workdir=str(paths.data_dir()),
+            proxy=parse_proxy(self.proxy_url()),
         )
 
     async def begin_login(self, phone: str) -> str:
@@ -280,9 +333,18 @@ class TmaAuth:
 
         await self.cancel_login()
         client = self._new_client()
-        await client.connect()
         try:
-            sent = await client.send_code(phone.strip())
+            await asyncio.wait_for(client.connect(), timeout=LOGIN_TIMEOUT_SEC)
+            sent = await asyncio.wait_for(
+                client.send_code(phone.strip()), timeout=LOGIN_TIMEOUT_SEC
+            )
+        except TimeoutError as exc:
+            await _quietly_disconnect(client)
+            raise RuntimeError(
+                "Telegram не отвечает. Чаще всего это блокировка у провайдера — "
+                "укажите прокси в поле ниже (например socks5://127.0.0.1:9050) "
+                "или пользуйтесь ручным вводом токена."
+            ) from exc
         except Exception:
             await _quietly_disconnect(client)
             raise
@@ -299,7 +361,10 @@ class TmaAuth:
 
         pending = self._require_pending()
         try:
-            await pending.client.sign_in(pending.phone, pending.code_hash, code.strip())
+            await asyncio.wait_for(
+                pending.client.sign_in(pending.phone, pending.code_hash, code.strip()),
+                timeout=LOGIN_TIMEOUT_SEC,
+            )
         except SessionPasswordNeeded:
             pending.awaiting_password = True
             return "needs_password"
@@ -314,7 +379,9 @@ class TmaAuth:
         """Шаг третий: двухфакторный пароль, если он включён."""
         pending = self._require_pending()
         try:
-            await pending.client.check_password(password)
+            await asyncio.wait_for(
+                pending.client.check_password(password), timeout=LOGIN_TIMEOUT_SEC
+            )
         except Exception:
             await self.cancel_login()
             raise
@@ -326,6 +393,33 @@ class TmaAuth:
         if self._pending is not None:
             await _quietly_disconnect(self._pending.client)
             self._pending = None
+
+    async def forget_session(self) -> str:
+        """Удаляем сессию Telegram вместе с файлом.
+
+        Файл держит открытым сам клиент, а Windows не даёт удалить занятый
+        файл. Поэтому сначала отпускаем клиента и только потом удаляем, с
+        несколькими попытками: отпускает он не мгновенно.
+        """
+        await self.cancel_login()
+        path = self.session_path()
+        if not path.exists():
+            return "Сессии и не было"
+
+        for attempt in range(UNLINK_ATTEMPTS):
+            try:
+                path.unlink()
+            except PermissionError:
+                await asyncio.sleep(0.3 * (attempt + 1))
+            except OSError as exc:
+                return f"Не удалось удалить файл сессии: {exc}"
+            else:
+                return "Сессия удалена"
+
+        return (
+            "Файл сессии занят подключением к Telegram. Перезапустите "
+            "приложение и повторите — при старте он не открыт."
+        )
 
     def _require_pending(self) -> PendingLogin:
         if self._pending is None:

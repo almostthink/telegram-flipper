@@ -49,6 +49,7 @@ async def auth_status() -> dict:
         "userbot_available": auth.userbot_available(),
         "credentials_saved": auth.has_credentials(),
         "session_ready": auth.has_session(),
+        "proxy_url": auth.proxy_url(),
     }
 
 
@@ -172,14 +173,33 @@ async def telegram_password(request: PasswordRequest) -> dict:
 
 @router.delete("/auth/telegram")
 async def telegram_logout() -> dict:
-    """Забываем сессию Telegram вместе с файлом на диске."""
-    await auth.cancel_login()
-    path = auth.session_path()
-    existed = path.exists()
-    path.unlink(missing_ok=True)
+    """Забываем сессию Telegram вместе с файлом на диске.
+
+    Файл держит открытым сам клиент, поэтому удаление вынесено в auth: там
+    он сначала отпускается. Раньше маршрут удалял файл напрямую и падал на
+    Windows с «файл занят другим процессом», отдавая пользователю 500.
+    """
+    return {"ok": True, "detail": await auth.forget_session()}
+
+
+class ProxyRequest(BaseModel):
+    url: str
+
+
+@router.post("/auth/proxy")
+async def set_proxy(request: ProxyRequest) -> dict:
+    """Прокси для подключения к Telegram.
+
+    Нужен там, где Telegram недоступен напрямую: без него Pyrogram просто
+    бесконечно повторяет подключение.
+    """
+    try:
+        auth.save_proxy(request.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "ok": True,
-        "detail": "Сессия удалена" if existed else "Сессии и не было",
+        "detail": "Прокси сохранён" if request.url.strip() else "Прокси убран",
     }
 
 

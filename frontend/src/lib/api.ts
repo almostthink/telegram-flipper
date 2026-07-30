@@ -227,6 +227,7 @@ export interface AuthStatus {
   userbot_available: boolean
   credentials_saved: boolean
   session_ready: boolean
+  proxy_url: string
 }
 
 export interface JournalEntry {
@@ -341,6 +342,8 @@ export const api = {
       '/auth/telegram/password',
       json({ password }),
     ),
+  telegramProxy: (url: string) =>
+    request<{ ok: boolean; detail: string }>('/auth/proxy', json({ url })),
   telegramLogout: () =>
     request<{ ok: boolean; detail: string }>('/auth/telegram', { method: 'DELETE' }),
 

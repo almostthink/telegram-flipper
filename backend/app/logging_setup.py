@@ -39,3 +39,8 @@ def setup_logging(level: str = "INFO") -> None:
 
     # httpx на INFO печатает каждый запрос — при сканировании рынка это шум.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    # Pyrogram при старте кричит «TgCrypto is missing!». Пугает зря: он
+    # необязателен, ускоряет лишь шифрование, а собрать его под свежий
+    # Python без компилятора нельзя — поэтому мы его намеренно не везём.
+    logging.getLogger("pyrogram.crypto.aes").setLevel(logging.ERROR)

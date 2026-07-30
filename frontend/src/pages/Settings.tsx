@@ -572,6 +572,8 @@ function TelegramLogin({
         Вход в Telegram. Код придёт в само приложение — введите его сюда, а не в консоль.
       </div>
 
+      <ProxyField auth={auth} onReport={onReport} />
+
       {stage === 'phone' && (
         <>
           <input
@@ -869,6 +871,44 @@ function Field({
         >
           OK
         </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Прокси для Telegram: без него вход не состоится там, где он заблокирован. */
+function ProxyField({
+  auth,
+  onReport,
+}: {
+  auth: { data: AuthStatus | null; reload: () => Promise<unknown> | void }
+  onReport: (tone: 'info' | 'error' | 'warn', text: string) => void
+}) {
+  const [url, setUrl] = useState(auth.data?.proxy_url ?? '')
+
+  return (
+    <div className="space-y-1">
+      <div className="flex gap-2">
+        <input
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="socks5://127.0.0.1:1080 — прокси, если нужен"
+          className="flex-1 rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+        />
+        <Button
+          onClick={() =>
+            void api
+              .telegramProxy(url)
+              .then((r) => onReport('info', r.detail))
+              .then(() => auth.reload())
+              .catch((e: Error) => onReport('error', e.message))
+          }
+        >
+          Сохранить
+        </Button>
+      </div>
+      <div className="text-xs text-slate-600">
+        Заполняйте, только если Telegram недоступен напрямую. Пустое поле убирает прокси.
       </div>
     </div>
   )
