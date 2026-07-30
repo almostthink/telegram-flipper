@@ -226,6 +226,7 @@ export interface AuthStatus {
   vault_secure: boolean
   userbot_available: boolean
   credentials_saved: boolean
+  session_ready: boolean
 }
 
 export interface JournalEntry {
@@ -325,6 +326,24 @@ export const api = {
     request<{ ok: boolean; detail: string }>('/auth/token', json({ market, token })),
   setCredentials: (apiId: string, apiHash: string) =>
     request<{ ok: boolean; detail: string }>('/auth/credentials', json({ api_id: apiId, api_hash: apiHash })),
+  telegramCode: (phone: string) =>
+    request<{ ok: boolean; detail: string; needs_password: boolean }>(
+      '/auth/telegram/code',
+      json({ phone }),
+    ),
+  telegramSignIn: (code: string) =>
+    request<{ ok: boolean; detail: string; needs_password: boolean }>(
+      '/auth/telegram/signin',
+      json({ code }),
+    ),
+  telegramPassword: (password: string) =>
+    request<{ ok: boolean; detail: string; needs_password: boolean }>(
+      '/auth/telegram/password',
+      json({ password }),
+    ),
+  telegramLogout: () =>
+    request<{ ok: boolean; detail: string }>('/auth/telegram', { method: 'DELETE' }),
+
   refreshToken: (market: string) =>
     request<{ ok: boolean; detail: string }>(`/auth/refresh/${market}`, { method: 'POST' }),
 

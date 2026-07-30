@@ -101,6 +101,10 @@ class MarketHealth:
     reason: str = ""
     #: Пауза до вмешательства человека: сеть тут не поможет, нужен токен.
     needs_attention: bool = False
+    #: Токен, на котором площадка отказала. Как только пользователь задаст
+    #: другой, пауза снимается сама — иначе площадка оставалась бы
+    #: выключенной до перезапуска даже с исправным токеном.
+    failed_token: str | None = None
 
     def is_paused(self, now: float) -> bool:
         return self.needs_attention or now < self.paused_until
@@ -360,26 +364,46 @@ class Scanner:
     ) -> None:
         """Пробуем обновить токен, иначе выключаем площадку до вмешательства."""
         log.warning("%s: %s — пробую обновить токен", market.value, exc)
+        rejected = auth.get(market)
         try:
-            token = await auth.ensure_fresh(market)
+            token = await auth.ensure_fresh(market, rejected=rejected)
         except Exception as refresh_exc:  # noqa: BLE001
             token = None
             log.warning("Обновление токена %s не удалось: %s", market.value, refresh_exc)
 
-        if token:
+        # Прежний токен, вернувшийся из обновления, — это не обновление.
+        # Принимать его за успех значило крутить один и тот же отказ
+        # каждые пятнадцать секунд, ни разу не сказав об этом пользователю.
+        if token and token != rejected:
             stats.errors.append(f"{market.value}: токен обновлён, повтор на следующем проходе")
             return
 
         health = self._health.setdefault(market, MarketHealth())
         health.needs_attention = True
         health.reason = "требуется новый токен"
+        health.failed_token = rejected
+        log.warning(
+            "%s отключена: нужен новый токен. Задайте его в Настройках — "
+            "площадка включится сама.",
+            market.value,
+        )
         stats.errors.append(f"{market.value}: нужен новый токен — задайте его в Настройках")
 
     # --- Учёт состояния площадок -----------------------------------------
 
     def _is_paused(self, market: Market) -> bool:
         health = self._health.get(market)
-        return health is not None and health.is_paused(time.time())
+        if health is None:
+            return False
+
+        if health.needs_attention and auth.get(market) != health.failed_token:
+            # Токен сменился — значит, вмешательство состоялось. Ждать
+            # отдельной команды на включение неоткуда и незачем.
+            log.info("%s: задан новый токен, площадка снова в работе", market.value)
+            self._health.pop(market, None)
+            return False
+
+        return health.is_paused(time.time())
 
     def _note_success(self, market: Market) -> None:
         self._health.pop(market, None)

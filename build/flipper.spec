@@ -18,6 +18,8 @@ if not (FRONTEND_DIST / "index.html").exists():
         "Выполните: cd frontend && npm ci && npm run build"
     )
 
+from PyInstaller.utils.hooks import collect_submodules  # noqa: E402
+
 a = Analysis(  # noqa: F821
     [str(BACKEND / "launcher.py")],
     pathex=[str(BACKEND)],
@@ -47,7 +49,12 @@ a = Analysis(  # noqa: F821
         "apscheduler.triggers.interval",
         "apscheduler.executors.asyncio",
         "app.main",
-    ],
+    ]
+    # Pyrogram разрешает конструкторы протокола Telegram по числовому
+    # идентификатору во время разбора ответа. Статических импортов на них
+    # нет, поэтому нужен весь пакет целиком, иначе вход падает на первом
+    # же ответе сервера.
+    + collect_submodules("pyrogram"),
     hookspath=[],
     runtime_hooks=[],
     excludes=["tkinter", "matplotlib", "pytest"],

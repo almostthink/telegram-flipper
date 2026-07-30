@@ -17,8 +17,10 @@ Telegram выдаёт мини-аппу строку initData, и дальше �
    запрашивает initData у мини-аппа. Работает автономно, но требует
    хранить сессию Telegram локально и повышает риск блокировки аккаунта.
 
-Pyrogram импортируется лениво: без него приложение работает в ручном режиме
-и не тянет лишние 20 МБ в exe.
+Pyrogram импортируется лениво — на старте он не нужен, — но в сборку
+входит. Отдельная установка через pip на состояние приложения не влияет:
+exe несёт своё окружение и системный site-packages не видит, поэтому
+надпись «Pyrogram не установлен» от неё и не исчезала.
 """
 
 from __future__ import annotations
@@ -41,6 +43,9 @@ MINI_APPS: dict[Market, tuple[str, str]] = {
 #: Считаем токен протухшим заранее, чтобы не ловить 401 в момент сделки.
 REFRESH_MARGIN_SEC = 6 * 3600
 DEFAULT_TTL_SEC = 24 * 3600
+
+#: Имя файла сессии Telegram в папке данных.
+SESSION_NAME = "flipper"
 
 #: Схемы авторизации различаются, и путать их нельзя.
 #:
@@ -159,11 +164,30 @@ class TokenState:
         return self.value is None or self.age_sec > DEFAULT_TTL_SEC - REFRESH_MARGIN_SEC
 
 
+@dataclass
+class PendingLogin:
+    """Незавершённый вход в Telegram: клиент живёт между шагами."""
+
+    client: object
+    phone: str
+    code_hash: str
+    awaiting_password: bool = False
+
+
+async def _quietly_disconnect(client) -> None:
+    """Отключаемся, не мешая исходной ошибке всплыть."""
+    try:
+        await client.disconnect()
+    except Exception:  # noqa: BLE001 — при разборе завала это уже не важно
+        log.debug("Клиент Telegram не отключился штатно", exc_info=True)
+
+
 class TmaAuth:
     """Держит токены площадок и умеет их обновлять."""
 
     def __init__(self) -> None:
         self._tokens: dict[Market, TokenState] = {}
+        self._pending: PendingLogin | None = None
         self._load_from_vault()
 
     def _load_from_vault(self) -> None:
@@ -220,6 +244,104 @@ class TmaAuth:
     def has_credentials(self) -> bool:
         return vault.has("tg_api_id") and vault.has("tg_api_hash")
 
+    # --- Вход в Telegram -------------------------------------------------
+    #
+    # Вход разбит на шаги намеренно. Pyrogram умеет спросить телефон и код
+    # сам, но спрашивает он их через stdin: в приложении с веб-интерфейсом
+    # это означало бы зависший на input() сервер и наглухо замерший
+    # интерфейс. Поэтому каждый шаг — отдельный запрос, а незавершённый
+    # клиент живёт между ними здесь.
+
+    def session_path(self):
+        from app import paths
+
+        return paths.data_dir() / f"{SESSION_NAME}.session"
+
+    def has_session(self) -> bool:
+        """Выполнен ли вход в Telegram."""
+        return self.session_path().exists()
+
+    def _new_client(self):
+        from pyrogram import Client
+
+        from app import paths
+
+        return Client(
+            name=SESSION_NAME,
+            api_id=int(vault.get("tg_api_id") or 0),
+            api_hash=vault.get("tg_api_hash") or "",
+            workdir=str(paths.data_dir()),
+        )
+
+    async def begin_login(self, phone: str) -> str:
+        """Шаг первый: просим Telegram прислать код."""
+        if not self.has_credentials():
+            raise RuntimeError("Сначала задайте api_id и api_hash")
+
+        await self.cancel_login()
+        client = self._new_client()
+        await client.connect()
+        try:
+            sent = await client.send_code(phone.strip())
+        except Exception:
+            await _quietly_disconnect(client)
+            raise
+
+        self._pending = PendingLogin(
+            client=client, phone=phone.strip(), code_hash=sent.phone_code_hash
+        )
+        # Ни телефон, ни код в журнал не пишем.
+        return "Код отправлен в Telegram"
+
+    async def complete_login(self, code: str) -> str:
+        """Шаг второй: подтверждаем код. Может потребоваться пароль."""
+        from pyrogram.errors import SessionPasswordNeeded
+
+        pending = self._require_pending()
+        try:
+            await pending.client.sign_in(pending.phone, pending.code_hash, code.strip())
+        except SessionPasswordNeeded:
+            pending.awaiting_password = True
+            return "needs_password"
+        except Exception:
+            await self.cancel_login()
+            raise
+
+        await self._finish_login()
+        return "ok"
+
+    async def complete_password(self, password: str) -> str:
+        """Шаг третий: двухфакторный пароль, если он включён."""
+        pending = self._require_pending()
+        try:
+            await pending.client.check_password(password)
+        except Exception:
+            await self.cancel_login()
+            raise
+
+        await self._finish_login()
+        return "ok"
+
+    async def cancel_login(self) -> None:
+        if self._pending is not None:
+            await _quietly_disconnect(self._pending.client)
+            self._pending = None
+
+    def _require_pending(self) -> PendingLogin:
+        if self._pending is None:
+            raise RuntimeError("Вход не начат — сначала запросите код")
+        return self._pending
+
+    async def _finish_login(self) -> None:
+        """Сохраняем сессию на диск и отпускаем клиента."""
+        pending = self._require_pending()
+        try:
+            await pending.client.storage.save()
+        finally:
+            await _quietly_disconnect(pending.client)
+            self._pending = None
+        log.info("Вход в Telegram выполнен, сессия сохранена")
+
     async def refresh_via_userbot(self, market: Market) -> str:
         """Запрашиваем свежий initData у мини-аппа через Telegram-сессию.
 
@@ -237,10 +359,9 @@ class TmaAuth:
             from pyrogram.raw.types import InputBotAppShortName
         except ImportError as exc:
             raise RuntimeError(
-                "Pyrogram не установлен. Установите: pip install pyrogram. "
-                "TgCrypto ставить не нужно: он только ускоряет шифрование, "
-                "колёс под свежий Python у него нет, и без компилятора "
-                "установка падает."
+                "Pyrogram недоступен в этой сборке. Устанавливать его "
+                "отдельно бесполезно: exe несёт своё окружение и системный "
+                "site-packages не видит."
             ) from exc
 
         from app import paths
@@ -297,19 +418,60 @@ class TmaAuth:
 
         return init_data
 
-    async def ensure_fresh(self, market: Market) -> str | None:
-        """Обновляем токен, если он выдохся и доступен userbot-режим."""
-        state = self._tokens.get(market)
-        if state and not state.looks_stale:
-            return state.value
+    async def ensure_fresh(self, market: Market, *, rejected: str | None = None) -> str | None:
+        """Свежий токен площадки или None, если взять его неоткуда.
 
-        if state and state.source == "userbot" and self.has_credentials():
+        ``rejected`` — токен, который площадка только что отвергла. Вернуть
+        его же в ответ означало бы соврать: вызывающий спрашивает именно
+        потому, что этот токен не работает. Ровно так и получалось —
+        сканер принимал отказ за успешное обновление, повторял запрос,
+        снова получал 401, и цикл крутился бесконечно, ни разу не сообщив
+        пользователю, что нужен новый токен.
+
+        Обновляем и вручную заданный токен тоже. Раньше условием стоял
+        источник «userbot», из-за чего протухший ручной токен не пытались
+        обновить, даже когда учётные данные Telegram были заданы.
+        """
+        state = self._tokens.get(market)
+        current = state.value if state else None
+        usable = bool(current) and current != rejected
+
+        if usable and state is not None and not state.looks_stale:
+            return current
+
+        if self.has_credentials() and market in MINI_APPS:
             try:
                 return await self.refresh_via_userbot(market)
             except Exception:  # noqa: BLE001 — падать на обновлении нельзя
                 log.exception("Не удалось обновить токен %s", market.value)
 
-        return state.value if state else None
+        return current if usable else None
+
+    async def verify(self, market: Market) -> str:
+        """Проверяем токен одним запросом. Пустая строка — всё в порядке.
+
+        Без проверки пользователь узнаёт о негодном токене только из
+        журнала, через минуты бесплодных попыток. Один запрос сразу после
+        сохранения отвечает на вопрос «работает ли то, что я вставил».
+        """
+        from app.adapters import registry
+        from app.adapters.base import AuthExpired, MarketplaceError
+        from app.config import settings
+
+        adapter = registry.build_adapter(market, settings)
+        probe = "me" if "me" in adapter.endpoints.endpoints else "balance"
+        if probe not in adapter.endpoints.endpoints:
+            return ""
+
+        try:
+            async with adapter:
+                await adapter.request(probe)
+        except AuthExpired:
+            return "площадка отвергла токен — вероятно, он уже протух"
+        except MarketplaceError as exc:
+            # Сеть или сама площадка легли: это не приговор токену.
+            return f"проверить не удалось: {exc}"
+        return ""
 
 
 def _init_data_from_url(url: str) -> str:

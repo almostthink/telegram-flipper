@@ -48,6 +48,7 @@ async def auth_status() -> dict:
         "vault_secure": vault.is_secure,
         "userbot_available": auth.userbot_available(),
         "credentials_saved": auth.has_credentials(),
+        "session_ready": auth.has_session(),
     }
 
 
@@ -65,6 +66,14 @@ async def set_token(request: TokenRequest) -> dict:
 
     saved = auth.get(market) or ""
     detail = f"Токен {market.value} сохранён"
+
+    # Проверяем сразу одним запросом. Без этого негодный токен обнаружится
+    # только в журнале, после минут бесплодных попыток, и выглядит это как
+    # «вставил, а ничего не изменилось».
+    problem = await auth.verify(market)
+    if problem:
+        return {"ok": False, "detail": f"{detail}, но {problem}"}
+    detail += " и принят площадкой"
 
     if market in COOKIE_MARKETS:
         # Молча принять строку без токена — значит обречь пользователя
@@ -96,10 +105,10 @@ async def set_credentials(request: CredentialsRequest) -> dict:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Pyrogram не установлен. Установите: pip install pyrogram — "
-                "или используйте ручной ввод токена. TgCrypto не нужен: он "
-                "только ускоряет шифрование, а собрать его без компилятора "
-                "не получится."
+                "Pyrogram недоступен в этой сборке. Устанавливать его "
+                "отдельно бесполезно: exe несёт своё окружение и системный "
+                "site-packages не видит. Обновите приложение или вводите "
+                "токен вручную — ручной режим работает без зависимостей."
             ),
         )
     try:
@@ -107,6 +116,77 @@ async def set_credentials(request: CredentialsRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "detail": "Данные сохранены"}
+
+
+class PhoneRequest(BaseModel):
+    phone: str
+
+
+class CodeRequest(BaseModel):
+    code: str
+
+
+class PasswordRequest(BaseModel):
+    password: str
+
+
+@router.post("/auth/telegram/code")
+async def telegram_code(request: PhoneRequest) -> dict:
+    """Шаг первый входа: запрашиваем код у Telegram.
+
+    Вход разбит на шаги, потому что Pyrogram спрашивает телефон и код
+    через stdin. В приложении с веб-интерфейсом это подвесило бы сервер
+    на input() — вместе со всей торговлей.
+    """
+    try:
+        detail = await auth.begin_login(request.phone)
+    except Exception as exc:  # noqa: BLE001 — причину показываем пользователю
+        raise HTTPException(status_code=400, detail=_readable(exc)) from exc
+    return {"ok": True, "detail": detail, "needs_password": False}
+
+
+@router.post("/auth/telegram/signin")
+async def telegram_signin(request: CodeRequest) -> dict:
+    try:
+        result = await auth.complete_login(request.code)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=_readable(exc)) from exc
+
+    if result == "needs_password":
+        return {
+            "ok": True,
+            "needs_password": True,
+            "detail": "Включена двухфакторная защита — введите облачный пароль",
+        }
+    return {"ok": True, "needs_password": False, "detail": "Вход выполнен"}
+
+
+@router.post("/auth/telegram/password")
+async def telegram_password(request: PasswordRequest) -> dict:
+    try:
+        await auth.complete_password(request.password)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=_readable(exc)) from exc
+    return {"ok": True, "needs_password": False, "detail": "Вход выполнен"}
+
+
+@router.delete("/auth/telegram")
+async def telegram_logout() -> dict:
+    """Забываем сессию Telegram вместе с файлом на диске."""
+    await auth.cancel_login()
+    path = auth.session_path()
+    existed = path.exists()
+    path.unlink(missing_ok=True)
+    return {
+        "ok": True,
+        "detail": "Сессия удалена" if existed else "Сессии и не было",
+    }
+
+
+def _readable(exc: Exception) -> str:
+    """Сообщение Telegram как есть, но без пустоты вместо текста."""
+    text = str(exc).strip()
+    return text or exc.__class__.__name__
 
 
 @router.post("/auth/refresh/{market_name}")

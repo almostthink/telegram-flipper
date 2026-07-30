@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { api } from '../lib/api'
+import { api, type AuthStatus } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { Alert, Button, Page } from '../components/ui'
 
@@ -464,12 +464,11 @@ function UserbotCard({
 
       {!available ? (
         <Alert tone="warn">
-          Pyrogram не установлен. Установите <code>pip install pyrogram</code> — именно
-          так, без <code>tgcrypto</code>: это C-расширение без готовых сборок под свежий
-          Python, оно пытается компилироваться и падает без Visual Studio Build Tools.
-          Pyrogram работает и без него, просто медленнее шифрует, и на один запрос
-          токена это не влияет. Либо пользуйтесь ручным вводом токена — он работает
-          без дополнительных зависимостей вовсе.
+          Pyrogram недоступен в этой сборке. Ставить его через <code>pip</code> нет
+          смысла: приложение — собранный exe со своим окружением, системный
+          site-packages он не видит, поэтому эта надпись от установки не исчезнет.
+          Обновите приложение — начиная со свежей сборки Pyrogram входит внутрь.
+          Либо пользуйтесь ручным вводом токена: он работает без зависимостей вовсе.
         </Alert>
       ) : (
         <div className="space-y-2">
@@ -510,7 +509,141 @@ function UserbotCard({
               </Button>
             )}
           </div>
+
+          {auth.data?.credentials_saved && (
+            <TelegramLogin auth={auth} onReport={onReport} />
+          )}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Вход в Telegram по шагам: телефон → код → облачный пароль. */
+function TelegramLogin({
+  auth,
+  onReport,
+}: {
+  auth: { data: AuthStatus | null; reload: () => Promise<unknown> | void }
+  onReport: (tone: 'info' | 'error' | 'warn', text: string) => void
+}) {
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [stage, setStage] = useState<'phone' | 'code' | 'password'>('phone')
+  const [busy, setBusy] = useState(false)
+
+  const run = async (action: () => Promise<{ detail: string; needs_password?: boolean }>) => {
+    setBusy(true)
+    try {
+      const result = await action()
+      onReport('info', result.detail)
+      return result
+    } catch (e) {
+      onReport('error', e instanceof Error ? e.message : String(e))
+      return null
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (auth.data?.session_ready && stage === 'phone') {
+    return (
+      <div className="mt-3 flex items-center justify-between rounded-lg bg-ink-700 px-3 py-2">
+        <span className="text-xs text-slate-400">Вход в Telegram выполнен</span>
+        <Button
+          onClick={() =>
+            void api
+              .telegramLogout()
+              .then((r) => onReport('info', r.detail))
+              .then(() => auth.reload())
+              .catch((e: Error) => onReport('error', e.message))
+          }
+        >
+          Выйти
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-ink-500 pt-3">
+      <div className="text-xs text-slate-500">
+        Вход в Telegram. Код придёт в само приложение — введите его сюда, а не в консоль.
+      </div>
+
+      {stage === 'phone' && (
+        <>
+          <input
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="+79991234567"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+          />
+          <Button
+            variant="primary"
+            disabled={busy || !phone.trim()}
+            onClick={() =>
+              void run(() => api.telegramCode(phone)).then((r) => r && setStage('code'))
+            }
+          >
+            Получить код
+          </Button>
+        </>
+      )}
+
+      {stage === 'code' && (
+        <>
+          <input
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+            placeholder="код из Telegram"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+          />
+          <Button
+            variant="primary"
+            disabled={busy || !code.trim()}
+            onClick={() =>
+              void run(() => api.telegramSignIn(code)).then(async (result) => {
+                if (!result) return
+                if (result.needs_password) {
+                  setStage('password')
+                  return
+                }
+                setStage('phone')
+                await auth.reload()
+              })
+            }
+          >
+            Подтвердить
+          </Button>
+        </>
+      )}
+
+      {stage === 'password' && (
+        <>
+          <input
+            value={password}
+            type="password"
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="облачный пароль"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-200"
+          />
+          <Button
+            variant="primary"
+            disabled={busy || !password}
+            onClick={() =>
+              void run(() => api.telegramPassword(password)).then(async (result) => {
+                if (!result) return
+                setPassword('')
+                setStage('phone')
+                await auth.reload()
+              })
+            }
+          >
+            Войти
+          </Button>
+        </>
       )}
     </div>
   )
