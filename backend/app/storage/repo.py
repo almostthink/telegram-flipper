@@ -21,6 +21,7 @@ from app.domain import (
 from app.storage.models import (
     AttributeFloorSnapshot,
     FloorSnapshot,
+    ListingEvent,
     ListingSnapshot,
     SaleRecord,
     SignalRecord,
@@ -141,14 +142,97 @@ async def record_sales(session: AsyncSession, events: list[ActivityEvent]) -> in
     return result.rowcount or 0
 
 
+async def record_listing_events(session: AsyncSession, events: list[ActivityEvent]) -> int:
+    """Пишем моменты выставления лотов из ленты событий.
+
+    Нужны только для времени до продажи: продажа того же подарка минус его
+    листинг и есть TTS, измеренный, а не восстановленный по совпадению цены.
+    """
+    rows = []
+    seen: set[tuple[str, str]] = set()
+    # Лента идёт от свежих к старым, поэтому первое вхождение подарка —
+    # его последнее выставление. Более старые события затирать нечем.
+    for event in events:
+        if event.kind is not ActivityKind.LISTING or not event.gift.external_id:
+            continue
+        key = (event.market.value, event.gift.external_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "market": event.market.value,
+                "gift_external_id": event.gift.external_id,
+                "collection": event.gift.collection,
+                "price_ton": event.price_ton,
+                "listed_at": event.happened_at,
+            }
+        )
+
+    if not rows:
+        return 0
+
+    statement = sqlite_insert(ListingEvent).values(rows)
+    statement = statement.on_conflict_do_update(
+        index_elements=[ListingEvent.market, ListingEvent.gift_external_id],
+        set_={
+            "listed_at": statement.excluded.listed_at,
+            "price_ton": statement.excluded.price_ton,
+        },
+        # Перевыставление сдвигает отсчёт вперёд; событие старее записанного
+        # означает, что мы уже видели более свежее — трогать не надо.
+        where=ListingEvent.listed_at < statement.excluded.listed_at,
+    )
+    result = await session.execute(statement)
+    return result.rowcount or 0
+
+
 async def attach_tts(session: AsyncSession, market: str, collection: str) -> int:
     """Восстанавливаем время до продажи, сопоставляя продажи с листингами.
 
-    Прямого поля TTS у площадок нет. Но если подарок наблюдался в листингах,
-    а затем появился в ленте как проданный, разница между listed_at и sold_at
-    и есть фактическое время до продажи. Это единственный способ измерить
-    ликвидность честно, а не по обещаниям площадки.
+    Прямого поля TTS у площадок нет. Считаем двумя способами, в порядке
+    убывания точности:
+
+    1. По событиям ленты — тот же экземпляр подарка выставлен, потом продан.
+       Это измерение: обе даты относятся к одному предмету.
+    2. По снимкам книги — совпадение коллекции, площадки и цены. Это
+       догадка: в ликвидной коллекции цены повторяются, и сопоставиться
+       может чужой лот. Остаётся для продаж, к которым события листинга
+       не нашлось: у Portals лента короче, и без запасного способа часть
+       сделок осталась бы без TTS вовсе.
     """
+    updated = await _attach_tts_by_instance(session, market, collection)
+    return updated + await _attach_tts_by_price(session, market, collection)
+
+
+async def _attach_tts_by_instance(session: AsyncSession, market: str, collection: str) -> int:
+    query = (
+        select(SaleRecord, ListingEvent)
+        .join(
+            ListingEvent,
+            (ListingEvent.market == SaleRecord.market)
+            & (ListingEvent.gift_external_id == SaleRecord.gift_external_id),
+        )
+        .where(
+            SaleRecord.market == market,
+            SaleRecord.collection == collection,
+            SaleRecord.tts_hours.is_(None),
+            SaleRecord.gift_external_id.is_not(None),
+        )
+        .limit(500)
+    )
+
+    updated = 0
+    for sale, listing in (await session.execute(query)).all():
+        hours = _hours_between(listing.listed_at, sale.sold_at)
+        if hours is None:
+            continue
+        sale.tts_hours = hours
+        updated += 1
+    return updated
+
+
+async def _attach_tts_by_price(session: AsyncSession, market: str, collection: str) -> int:
     query = (
         select(SaleRecord, ListingSnapshot)
         .join(
@@ -168,18 +252,24 @@ async def attach_tts(session: AsyncSession, market: str, collection: str) -> int
 
     updated = 0
     for sale, listing in (await session.execute(query)).all():
-        listed_at = _aware(listing.listed_at)
-        sold_at = _aware(sale.sold_at)
-        if listed_at is None or sold_at is None or sold_at <= listed_at:
-            continue
-        hours = (sold_at - listed_at).total_seconds() / 3600
-        # Больше месяца — почти наверняка ошибка сопоставления по цене.
-        if hours > 24 * 30:
+        hours = _hours_between(listing.listed_at, sale.sold_at)
+        if hours is None:
             continue
         sale.tts_hours = hours
         updated += 1
 
     return updated
+
+
+def _hours_between(listed_at: datetime | None, sold_at: datetime | None) -> float | None:
+    """Часы от листинга до продажи, если пара вообще осмысленна."""
+    listed = _aware(listed_at)
+    sold = _aware(sold_at)
+    if listed is None or sold is None or sold <= listed:
+        return None
+    hours = (sold - listed).total_seconds() / 3600
+    # Больше месяца — почти наверняка ошибка сопоставления.
+    return None if hours > 24 * 30 else hours
 
 
 async def record_floors(session: AsyncSession, floors: list[CollectionFloor]) -> int:

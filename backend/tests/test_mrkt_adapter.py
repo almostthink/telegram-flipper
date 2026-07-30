@@ -26,7 +26,7 @@ from app.adapters.mrkt import (
     parse_mrkt_gift,
 )
 from app.analytics import pricing
-from app.domain import AttributeKind, Market
+from app.domain import ActivityKind, AttributeKind, Market
 
 FIXTURES = json.loads(
     (Path(__file__).parent / "fixtures" / "mrkt_responses.json").read_text(encoding="utf-8")
@@ -38,6 +38,16 @@ def adapter() -> MrktAdapter:
     return MrktAdapter(endpoints=DEFAULT_ENDPOINTS, fee_sell=FEE_AS_SELL_SIDE)
 
 
+class Pages(list):
+    """Последовательность ответов эндпоинта — по одной на страницу."""
+
+
+#: Ответ за последней страницей: пустой список и пустой курсор. Именно так
+#: ведёт себя площадка, и фейк обязан это повторять — иначе постраничный
+#: обход в тестах крутится по одной и той же странице.
+EXHAUSTED = {"gifts": [], "items": [], "cursor": ""}
+
+
 class FakeAdapter(MrktAdapter):
     """Адаптер с подменённым транспортом: сеть в тестах не нужна."""
 
@@ -45,16 +55,23 @@ class FakeAdapter(MrktAdapter):
         super().__init__(endpoints=DEFAULT_ENDPOINTS, fee_sell=FEE_AS_SELL_SIDE)
         self.responses = responses
         self.calls: list[tuple[str, dict | None, dict | None]] = []
+        self._served: dict[str, int] = {}
 
-    async def request(self, endpoint, *, params=None, json_body=None):
+    async def request(self, endpoint, *, params=None, json_body=None, raw=False):
         self.calls.append((endpoint, params, json_body))
         if endpoint not in self.responses:
             raise KeyError(endpoint)
-        payload = self.responses[endpoint]
+
+        page = self._served.get(endpoint, 0)
+        self._served[endpoint] = page + 1
+        stored = self.responses[endpoint]
+        pages = list(stored) if isinstance(stored, Pages) else [stored]
+        payload = pages[page] if page < len(pages) else EXHAUSTED
+
         spec = self.endpoints.get(endpoint)
         from app.adapters.base import dig
 
-        return dig(payload, spec.json_path)
+        return payload if raw else dig(payload, spec.json_path)
 
 
 # --- Разбор подарка ------------------------------------------------------
@@ -213,6 +230,7 @@ async def test_attribute_floors_survive_missing_endpoint():
         # Реальные пути MRKT, которые раньше распознавались неверно:
         # счётчик уведомлений попадал в «ленту сделок», а страница
         # статистики конкурировала со списком лотов.
+        ("/api/v1/feed", "activity"),
         ("/api/v1/activities/notifications-count", None),
         ("/api/v1/gift-statistics", None),
         ("/api/v1/team-events/active", None),
@@ -240,3 +258,117 @@ def test_endpoints_are_overridable():
         endpoints={**DEFAULT_ENDPOINTS.endpoints},
     )
     assert patched.get("listings").path == "/api/v1/gifts/saling"
+
+
+# --- Лента сделок --------------------------------------------------------
+
+
+def test_activity_endpoint_is_confirmed_feed():
+    """Путь ленты — /api/v1/feed, а не угаданный ранее /api/v1/activities.
+
+    Без ленты у MRKT нет истории сделок, а значит нет ни скорости продаж,
+    ни времени до продажи — 65% веса балла ликвидности.
+    """
+    spec = DEFAULT_ENDPOINTS.get("activity")
+    assert spec.path == "/api/v1/feed"
+    assert spec.method == "POST"
+    assert spec.json_path == "items"
+
+
+async def test_activity_request_body_matches_api_contract():
+    adapter = FakeAdapter({"activity": FIXTURES["feed"]})
+    await adapter.activity("Lush Bouquet", limit=20)
+
+    _, _, body = adapter.calls[0]
+    assert body["type"] == ["Sale", "Listing"]
+    assert body["collectionNames"] == ["Lush Bouquet"]
+    assert body["ordering"] == "Latest"
+    for required in ("count", "cursor", "minPrice", "maxPrice"):
+        assert required in body
+
+
+async def test_activity_parses_sales_and_listings():
+    adapter = FakeAdapter({"activity": FIXTURES["feed"]})
+    events = await adapter.activity(limit=50)
+
+    assert len(events) == len(FIXTURES["feed"]["items"])
+    kinds = {event.kind for event in events}
+    assert ActivityKind.SALE in kinds
+    assert ActivityKind.LISTING in kinds
+
+
+async def test_activity_price_is_buyer_facing_nanotons():
+    """amount у продажи совпадает с salePrice подарка — цена с надбавкой."""
+    adapter = FakeAdapter({"activity": FIXTURES["feed"]})
+    events = await adapter.activity(limit=50)
+
+    raw = FIXTURES["feed"]["items"][0]
+    first = events[0]
+    assert first.price_ton == pytest.approx(raw["amount"] / 1e9)
+    assert first.price_ton == pytest.approx(raw["gift"]["salePrice"] / 1e9)
+
+
+async def test_activity_keeps_gift_identity_for_antifraud():
+    """Событию нужен идентификатор экземпляра, а не только модель.
+
+    Отбраковка перепродаж своим же лотам сравнивает подарки по
+    external_id: без него одинаковые модели разных подарков выглядят
+    как повторный флип и вся ликвидная коллекция уходит в отсев.
+    """
+    adapter = FakeAdapter({"activity": FIXTURES["feed"]})
+    events = await adapter.activity(limit=50)
+
+    raw = FIXTURES["feed"]["items"][0]
+    assert events[0].gift.external_id == raw["gift"]["id"]
+    assert events[0].external_id == raw["id"]
+    assert events[0].gift.number == raw["gift"]["number"]
+    assert events[0].gift.collection == raw["gift"]["collectionName"]
+
+
+async def test_unknown_event_type_is_skipped_not_counted_as_sale():
+    """Выдуманная сделка завышает и скорость продаж, и историю цен."""
+    payload = {
+        "items": [
+            {
+                "type": "someNewThing",
+                "id": "e-1",
+                "amount": 1_000_000_000,
+                "date": "2026-07-30T06:42:45Z",
+                "gift": FIXTURES["feed"]["items"][0]["gift"],
+            }
+        ],
+        "cursor": "",
+    }
+    adapter = FakeAdapter({"activity": payload})
+    assert await adapter.activity(limit=50) == []
+
+
+async def test_activity_follows_cursor_across_pages():
+    first = {"items": FIXTURES["feed"]["items"][:4], "cursor": "page-2"}
+    second = {"items": FIXTURES["feed"]["items"][4:], "cursor": ""}
+    adapter = FakeAdapter({"activity": Pages([first, second])})
+
+    events = await adapter.activity(limit=50)
+
+    assert len(events) == len(FIXTURES["feed"]["items"])
+    assert adapter.calls[1][2]["cursor"] == "page-2", "курсор должен уходить в запрос"
+
+
+async def test_listings_follow_cursor_across_pages():
+    """Курсор терялся при выборке массива — обход кончался на первой странице."""
+    first = {"gifts": FIXTURES["saling"]["gifts"], "cursor": "page-2"}
+    second = {"gifts": FIXTURES["saling"]["gifts"], "cursor": ""}
+    adapter = FakeAdapter({"listings": Pages([first, second])})
+
+    await adapter.listings("Evil Eye", limit=50)
+
+    assert len(adapter.calls) == 2
+    assert adapter.calls[1][2]["cursor"] == "page-2"
+
+
+async def test_paging_stops_without_cursor():
+    """Пустой курсор — конец выдачи, лишних запросов быть не должно."""
+    adapter = FakeAdapter({"activity": {"items": FIXTURES["feed"]["items"], "cursor": ""}})
+    await adapter.activity(limit=500)
+
+    assert len(adapter.calls) == 1

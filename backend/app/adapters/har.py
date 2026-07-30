@@ -33,7 +33,9 @@ CLASSIFIERS: list[tuple[str, tuple[str, ...]]] = [
     ("offers", ("offer", "bid")),
     ("balance", ("balance", "wallet")),
     ("inventory", ("owned", "inventory", "my-gift", "user/gift")),
-    ("activity", ("activit", "history", "deal", "trade", "sale-", "sold")),
+    # «feed» — путь ленты сделок MRKT: по названию не догадаешься, что это
+    # история рынка, а не новостная лента, но именно она там и лежит.
+    ("activity", ("activit", "history", "deal", "trade", "sale-", "sold", "feed", "action")),
     ("listings", ("saling", "on-sale", "search", "nft", "gift", "item", "listing")),
 ]
 

@@ -122,3 +122,20 @@ async def test_fresh_database_needs_no_migration(tmp_path, monkeypatch):
     async with session_scope() as session:
         assert list((await session.execute(select(ListingSnapshot))).scalars()) == []
     await dispose_db()
+
+
+async def test_new_tables_appear_on_legacy_database(legacy_db):
+    """Таблица событий листинга появилась позже — база должна её получить.
+
+    Без неё время до продажи считалось бы по совпадению цены, то есть
+    иногда по чужому лоту, и пользователь об этом бы не узнал.
+    """
+    await init_db()
+
+    connection = sqlite3.connect(legacy_db / "flipper.db")
+    tables = {
+        row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    connection.close()
+
+    assert "listing_events" in tables

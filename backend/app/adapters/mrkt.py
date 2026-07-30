@@ -26,7 +26,13 @@ from __future__ import annotations
 
 import logging
 
-from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace, MarketplaceError
+from app.adapters.base import (
+    EndpointSpec,
+    MarketEndpoints,
+    Marketplace,
+    MarketplaceError,
+    dig,
+)
 from app.adapters.parsing import as_list, nano_to_ton, pick, to_datetime
 from app.domain import (
     ActivityEvent,
@@ -64,12 +70,13 @@ DEFAULT_ENDPOINTS = MarketEndpoints(
         "balance": EndpointSpec("/api/v1/balance"),
         "me": EndpointSpec("/api/v1/me"),
         "auth": EndpointSpec("/api/v1/auth", method="POST"),
+        # Лента событий рынка. Путь неочевидный — не /activities/, как
+        # напрашивалось по счётчику уведомлений, а /feed.
+        "activity": EndpointSpec("/api/v1/feed", method="POST", json_path="items"),
         # --- не подтверждено: в записи этих действий не было ---
-        # Предположения по симметрии с backdrops/symbols и по префиксу
-        # /activities/, под которым лежит счётчик уведомлений.
+        # Предположения по симметрии с backdrops/symbols.
         # Правятся импортом HAR без пересборки.
         "models": EndpointSpec("/api/v1/gifts/models", method="POST"),
-        "activity": EndpointSpec("/api/v1/activities", json_path="activities"),
         "inventory": EndpointSpec("/api/v1/gifts/my", method="POST", json_path="gifts"),
         "buy": EndpointSpec("/api/v1/gifts/buy", method="POST"),
         "sell": EndpointSpec("/api/v1/gifts/sell", method="POST"),
@@ -106,6 +113,27 @@ _LISTING_QUERY: dict[str, object] = {
     "query": None,
 }
 
+#: Тело запроса ленты событий. Подтверждено записью трафика раздела
+#: истории: обход тот же курсорный, что и у списка лотов.
+#:
+#: ``type`` берём парой: продажа даёт цену сделки, листинг — момент, с
+#: которого лот стоял в книге. Без второго не восстановить время до
+#: продажи, а оно составляет 30% балла ликвидности.
+_FEED_QUERY: dict[str, object] = {
+    "count": 20,
+    "cursor": "",
+    "collectionNames": [],
+    "modelNames": [],
+    "backdropNames": [],
+    "number": None,
+    "type": ["Sale", "Listing"],
+    "minPrice": None,
+    "maxPrice": None,
+    "ordering": "Latest",
+    "lowToHigh": False,
+    "query": None,
+}
+
 _ACTION_MAP = {
     "buy": ActivityKind.SALE,
     "sale": ActivityKind.SALE,
@@ -122,6 +150,10 @@ _ACTION_MAP = {
 #: Страниц за один обход коллекции. 20 лотов на страницу — размер,
 #: который использует сам мини-апп.
 MAX_PAGES = 6
+
+#: Страниц ленты событий за один обход. Лента идёт от свежих к старым,
+#: и для суточной скорости продаж хватает нескольких страниц.
+MAX_FEED_PAGES = 8
 
 
 def parse_mrkt_gift(raw: dict) -> Gift:
@@ -213,35 +245,49 @@ class MrktAdapter(Marketplace):
                 result[str(name)] = previous
         return result
 
+    async def _pages(
+        self, endpoint: str, query: dict[str, object], *, limit: int, max_pages: int
+    ):
+        """Постраничный обход по курсору.
+
+        Ответ берём целиком (``raw=True``): курсор следующей страницы лежит
+        рядом с массивом, и выборка по ``json_path`` его отбрасывала — обход
+        молча заканчивался на первой странице.
+        """
+        spec = self.endpoints.get(endpoint)
+        cursor = ""
+        seen = 0
+
+        for _ in range(max_pages):
+            payload = await self.request(
+                endpoint, json_body={**query, "count": min(limit, 20), "cursor": cursor}, raw=True
+            )
+            # json_path указывает на массив, но после правки путей через HAR
+            # он может отсутствовать — тогда ищем массив по имени ключа.
+            rows = as_list(dig(payload, spec.json_path)) or as_list(payload)
+            if not rows:
+                return
+
+            yield rows
+            seen += len(rows)
+            if seen >= limit:
+                return
+
+            cursor = str(pick(payload, "cursor", default="")) if isinstance(payload, dict) else ""
+            if not cursor:
+                return
+
     async def listings(self, collection: str, *, limit: int = 100) -> list[Listing]:
         """Лоты в продаже, от дешёвых к дорогим. Постраничный обход по курсору."""
         collected: list[Listing] = []
-        cursor = ""
+        query = {**_LISTING_QUERY, "collectionNames": [collection] if collection else []}
 
-        for _ in range(MAX_PAGES):
-            body = {
-                **_LISTING_QUERY,
-                "count": min(limit, 20),
-                "cursor": cursor,
-                "collectionNames": [collection] if collection else [],
-            }
-            payload = await self.request("listings", json_body=body)
-
-            # json_path в спеке уже указывает на gifts, но при правке путей
-            # через HAR он может отсутствовать — подстраховываемся.
-            rows = as_list(payload)
-            if not rows:
-                break
-
+        async for rows in self._pages("listings", query, limit=limit, max_pages=MAX_PAGES):
             for raw in rows:
                 listing = self._to_listing(raw, collection)
                 if listing is not None:
                     collected.append(listing)
-
             if len(collected) >= limit:
-                break
-            cursor = str(pick(payload, "cursor", default="")) if isinstance(payload, dict) else ""
-            if not cursor:
                 break
 
         return collected[:limit]
@@ -321,37 +367,67 @@ class MrktAdapter(Marketplace):
     async def activity(
         self, collection: str | None = None, *, limit: int = 100
     ) -> list[ActivityEvent]:
-        """Лента сделок. Путь не подтверждён — правится импортом HAR."""
-        params: dict[str, object] = {"count": min(limit, 100)}
-        if collection:
-            params["collectionNames"] = collection
+        """Лента сделок: POST /api/v1/feed.
 
-        payload = await self.request("activity", params=params)
+        Подтверждено записью трафика раздела истории. Элемент ленты —
+        ``{type, id, amount, date, gift}``: тип события строкой («sale» или
+        «listing»), сумма в нанотонах и подарок целиком, тем же объектом,
+        что и в списке лотов.
+
+        Это единственный источник истории сделок MRKT. Без него не считаются
+        ни скорость продаж, ни время до продажи — 65% веса балла ликвидности,
+        и отбор идёт вслепую.
+
+        Сумма покупательская: у продажи ``amount`` совпадает с ``salePrice``
+        подарка, то есть уже включает 2% надбавки. Пересчитывать не нужно —
+        приложение везде хранит цену покупателя.
+
+        Фильтр по коллекции передаём по симметрии со списком лотов — в
+        записи лента была общей. Если площадка его проигнорирует, вреда нет:
+        коллекция берётся из самого подарка, а не из запроса.
+        """
         events: list[ActivityEvent] = []
+        query = {**_FEED_QUERY, "collectionNames": [collection] if collection else []}
 
-        for raw in as_list(payload):
-            price = nano_to_ton(pick(raw, "price", "salePrice", "amount"))
-            happened = to_datetime(pick(raw, "date", "createdAt", "soldAt", "timestamp"))
-            if price is None or happened is None:
-                continue
-            action = str(pick(raw, "type", "kind", "action", default="")).lower()
-            nested = raw.get("gift") if isinstance(raw.get("gift"), dict) else raw
-            gift = parse_mrkt_gift(nested)
-            if not gift.collection and collection:
-                gift.collection = collection
-            events.append(
-                ActivityEvent(
-                    market=self.name,
-                    kind=_ACTION_MAP.get(action, ActivityKind.SALE),
-                    gift=gift,
-                    price_ton=price,
-                    happened_at=happened,
-                    external_id=_as_str(pick(raw, "id")),
-                    buyer=_as_str(pick(raw, "buyerId", "buyer", "to")),
-                    seller=_as_str(pick(raw, "sellerId", "seller", "from")),
-                )
-            )
-        return events
+        async for rows in self._pages("activity", query, limit=limit, max_pages=MAX_FEED_PAGES):
+            for raw in rows:
+                event = self._to_event(raw, collection)
+                if event is not None:
+                    events.append(event)
+            if len(events) >= limit:
+                break
+
+        return events[:limit]
+
+    def _to_event(self, raw: dict, collection: str | None) -> ActivityEvent | None:
+        price = nano_to_ton(pick(raw, "amount", "price", "salePrice"))
+        happened = to_datetime(pick(raw, "date", "createdAt", "soldAt", "timestamp"))
+        if price is None or happened is None:
+            return None
+
+        action = str(pick(raw, "type", "kind", "action", default="")).lower()
+        kind = _ACTION_MAP.get(action)
+        if kind is None:
+            # Неизвестное событие лучше пропустить, чем записать продажей:
+            # выдуманная сделка завышает и скорость продаж, и историю цен.
+            log.debug("MRKT/feed: неизвестный тип события %r", action)
+            return None
+
+        nested = raw.get("gift") if isinstance(raw.get("gift"), dict) else raw
+        gift = parse_mrkt_gift(nested)
+        if not gift.collection and collection:
+            gift.collection = collection
+
+        return ActivityEvent(
+            market=self.name,
+            kind=kind,
+            gift=gift,
+            price_ton=price,
+            happened_at=happened,
+            external_id=_as_str(pick(raw, "id")),
+            buyer=_as_str(pick(raw, "buyerId", "buyer", "to")),
+            seller=_as_str(pick(raw, "sellerId", "seller", "from")),
+        )
 
     # --- Торговля -------------------------------------------------------
 

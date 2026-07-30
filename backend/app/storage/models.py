@@ -118,6 +118,35 @@ class SaleRecord(Base):
     )
 
 
+class ListingEvent(Base):
+    """Момент выставления подарка на продажу — из ленты событий площадки.
+
+    Отдельно от ``ListingSnapshot``, потому что это разные факты. Снимок —
+    «лот был в книге, когда мы смотрели»; событие — «лот выставили тогда-то».
+    Для времени до продажи нужно именно второе.
+
+    До появления ленты MRKT момент листинга брался из ``receivedDate``
+    подарка, а это когда владелец его получил, а не когда выставил: по
+    наблюдениям расхождение доходит до нескольких часов, и TTS завышался
+    ровно на эту разницу.
+
+    Храним последнее событие на подарок: перевыставление обнуляет отсчёт.
+    """
+
+    __tablename__ = "listing_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    market: Mapped[str] = mapped_column(String(16), index=True)
+    gift_external_id: Mapped[str] = mapped_column(String(128), index=True)
+    collection: Mapped[str] = mapped_column(String(128), index=True)
+    price_ton: Mapped[float | None] = mapped_column(Float)
+    listed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    __table_args__ = (
+        UniqueConstraint("market", "gift_external_id", name="uq_listing_event"),
+    )
+
+
 class FloorSnapshot(Base):
     """Флор коллекции на площадке в момент времени — для тренда и сверки."""
 

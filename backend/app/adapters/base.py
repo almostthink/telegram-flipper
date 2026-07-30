@@ -212,8 +212,14 @@ class Marketplace(ABC):
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        raw: bool = False,
     ) -> Any:
-        """Запрос с ретраями, разбором ошибок авторизации и rate-limit."""
+        """Запрос с ретраями, разбором ошибок авторизации и rate-limit.
+
+        ``raw=True`` отдаёт ответ целиком, без выборки массива по
+        ``json_path``. Это нужно постраничным обходам: курсор следующей
+        страницы лежит рядом с массивом, и после выборки он теряется.
+        """
         spec = self.endpoints.get(endpoint)
         await self.open()
         assert self._client is not None
@@ -258,7 +264,7 @@ class Marketplace(ABC):
                 payload = response.json()
             except ValueError as exc:
                 raise MarketplaceError(f"{self.name}: ответ не JSON на {spec.path}") from exc
-            return dig(payload, spec.json_path)
+            return payload if raw else dig(payload, spec.json_path)
 
         self.last_error = str(last_exc)
         raise MarketplaceError(f"{self.name}: не удалось выполнить {endpoint}: {last_exc}")

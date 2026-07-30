@@ -32,11 +32,12 @@ class FakePortals(PortalsAdapter):
         self.responses = responses
         self.calls: list[tuple[str, dict | None]] = []
 
-    async def request(self, endpoint, *, params=None, json_body=None):
+    async def request(self, endpoint, *, params=None, json_body=None, raw=False):
         self.calls.append((endpoint, params))
         if endpoint not in self.responses:
             raise KeyError(endpoint)
-        return dig(self.responses[endpoint], self.endpoints.get(endpoint).json_path)
+        payload = self.responses[endpoint]
+        return payload if raw else dig(payload, self.endpoints.get(endpoint).json_path)
 
 
 def test_base_url_is_the_real_domain():

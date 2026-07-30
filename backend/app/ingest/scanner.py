@@ -49,6 +49,7 @@ class ScanStats:
     floors: int = 0
     listings: int = 0
     sales: int = 0
+    listing_events: int = 0
     attribute_floors: int = 0
     vanished: int = 0
     tts_recovered: int = 0
@@ -58,6 +59,7 @@ class ScanStats:
         self.floors += other.floors
         self.listings += other.listings
         self.sales += other.sales
+        self.listing_events += other.listing_events
         self.attribute_floors += other.attribute_floors
         self.vanished += other.vanished
         self.tts_recovered += other.tts_recovered
@@ -143,8 +145,9 @@ class Scanner:
 
         self.last_stats = stats
         log.info(
-            "Скан: листингов %d, продаж %d, флоров атрибутов %d, пропало %d, TTS %d, ошибок %d",
-            stats.listings, stats.sales, stats.attribute_floors,
+            "Скан: листингов %d, продаж %d, событий ленты %d, флоров атрибутов %d, "
+            "пропало %d, TTS %d, ошибок %d",
+            stats.listings, stats.sales, stats.listing_events, stats.attribute_floors,
             stats.vanished, stats.tts_recovered, len(stats.errors),
         )
         return stats
@@ -193,6 +196,10 @@ class Scanner:
             return
         async with session_scope() as session:
             stats.sales += await repo.record_sales(session, events)
+            # Листинги из той же ленты — вторая половина пары для TTS.
+            # Без них время до продажи считается по совпадению цены, то
+            # есть иногда по чужому лоту.
+            stats.listing_events += await repo.record_listing_events(session, events)
 
     async def _save_attribute_floors(self, floors, stats: ScanStats) -> None:
         if not floors:
