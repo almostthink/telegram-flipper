@@ -127,7 +127,7 @@ export default function Dashboard() {
 
       <div className="mb-6 grid gap-4 lg:grid-cols-2">
         <div className="card">
-          <h2 className="mb-4 text-sm font-medium text-slate-300">Площадки</h2>
+          <h2 className="mb-4 text-sm font-medium text-neutral-300">Площадки</h2>
           <div className="space-y-2">
             {Object.entries(data.marketplaces).map(([key, market]) => (
               <div
@@ -136,25 +136,25 @@ export default function Dashboard() {
               >
                 <div className="flex items-center gap-3">
                   <span
-                    className={`h-2 w-2 rounded-full ${market.connected ? 'bg-profit' : 'bg-slate-600'}`}
+                    className={`h-2 w-2 rounded-full ${market.connected ? 'bg-profit' : 'bg-neutral-600'}`}
                   />
-                  <span className="text-sm text-slate-200">{MARKET_LABELS[key] ?? key}</span>
+                  <span className="text-sm text-neutral-200">{MARKET_LABELS[key] ?? key}</span>
                   <span
                     className={`badge ${
-                      market.trade_enabled ? 'bg-accent/15 text-accent' : 'bg-ink-500 text-slate-400'
+                      market.trade_enabled ? 'bg-accent/15 text-accent' : 'bg-ink-500 text-neutral-400'
                     }`}
                   >
                     {market.trade_enabled ? 'торговля' : 'только цены'}
                   </span>
                 </div>
-                <span className="text-xs text-slate-500">{market.note}</span>
+                <span className="text-xs text-neutral-500">{market.note}</span>
               </div>
             ))}
           </div>
         </div>
 
         <div className="card">
-          <h2 className="mb-4 text-sm font-medium text-slate-300">Последний цикл</h2>
+          <h2 className="mb-4 text-sm font-medium text-neutral-300">Последний цикл</h2>
           <dl className="space-y-2 text-sm">
             <Row label="Сигналов оценено" value={engine.last_cycle.signals_total} />
             <Row label="Прошло фильтры" value={engine.last_cycle.signals_passed} />
@@ -177,25 +177,25 @@ export default function Dashboard() {
       </div>
 
       <div className="card">
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Накоплено данных</h2>
+        <h2 className="mb-3 text-sm font-medium text-neutral-300">Накоплено данных</h2>
         <div className="flex flex-wrap gap-6 text-sm">
           <div>
-            <span className="text-slate-500">Коллекций: </span>
-            <span className="font-mono text-slate-200">{data.data.collections_tracked}</span>
+            <span className="text-neutral-500">Коллекций: </span>
+            <span className="font-mono text-neutral-200">{data.data.collections_tracked}</span>
           </div>
           <div>
-            <span className="text-slate-500">Сделок в истории: </span>
-            <span className="font-mono text-slate-200">{data.data.sales_recorded}</span>
+            <span className="text-neutral-500">Сделок в истории: </span>
+            <span className="font-mono text-neutral-200">{data.data.sales_recorded}</span>
           </div>
           <div>
-            <span className="text-slate-500">Безубыток при наценке: </span>
+            <span className="text-neutral-500">Безубыток при наценке: </span>
             <span className="font-mono text-warn">
               {(engine.breakeven_markup * 100).toFixed(1)}%
             </span>
           </div>
         </div>
         {data.data.sales_recorded < 100 && (
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-neutral-500">
             Модель цены калибруется по истории сделок. Пока их меньше сотни, оценка
             опирается на флоры атрибутов и заведомо грубая — дайте сканеру поработать.
           </p>
@@ -208,8 +208,8 @@ export default function Dashboard() {
 function Row({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex justify-between">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="font-mono text-slate-200">{value}</dd>
+      <dt className="text-neutral-500">{label}</dt>
+      <dd className="font-mono text-neutral-200">{value}</dd>
     </div>
   )
 }

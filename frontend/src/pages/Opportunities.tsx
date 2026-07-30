@@ -68,15 +68,15 @@ export default function Opportunities() {
 
       {data && Object.keys(data.rejections).length > 0 && (
         <div className="card mb-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">Что отсекает лоты</h2>
+          <h2 className="mb-3 text-sm font-medium text-neutral-300">Что отсекает лоты</h2>
           <div className="flex flex-wrap gap-2">
             {Object.entries(data.rejections).map(([reason, count]) => (
-              <span key={reason} className="badge bg-ink-600 text-slate-400">
+              <span key={reason} className="badge bg-ink-600 text-neutral-400">
                 {reason}: {count}
               </span>
             ))}
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-neutral-500">
             Пороги: ROI от {percent(data.min_roi)}, ликвидность от{' '}
             {data.min_liquidity.toFixed(2)}. Меняются в Настройках.
           </p>
@@ -111,12 +111,12 @@ export default function Opportunities() {
                 onClick={() => setExpanded(expanded === signal.id ? null : signal.id)}
               >
                 <td className="px-4 py-2.5">
-                  <div className="text-slate-200">{signal.collection}</div>
-                  <div className="text-xs text-slate-600">{signal.market}</div>
+                  <div className="text-neutral-200">{signal.collection}</div>
+                  <div className="text-xs text-neutral-600">{signal.market}</div>
                 </td>
                 <td className="px-4 py-2.5">
                   {signal.number == null ? (
-                    <span className="text-slate-600">—</span>
+                    <span className="text-neutral-600">—</span>
                   ) : signal.number_label ? (
                     <span
                       title={signal.number_label}
@@ -125,12 +125,12 @@ export default function Opportunities() {
                       #{signal.number}
                     </span>
                   ) : (
-                    <span className="font-mono text-xs text-slate-500">
+                    <span className="font-mono text-xs text-neutral-500">
                       #{signal.number}
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-2.5 text-slate-400">
+                <td className="px-4 py-2.5 text-neutral-400">
                   <div className="flex items-center gap-2">
                     <span>{signal.model ?? '—'}</span>
                     {signal.monochrome_score != null && signal.monochrome_score >= 0.6 && (
@@ -145,11 +145,11 @@ export default function Opportunities() {
                     )}
                   </div>
                   {signal.backdrop && (
-                    <div className="text-xs text-slate-600">{signal.backdrop}</div>
+                    <div className="text-xs text-neutral-600">{signal.backdrop}</div>
                   )}
                 </td>
-                <td className="px-4 py-2.5 font-mono text-slate-200">{ton(signal.ask_ton)}</td>
-                <td className="px-4 py-2.5 font-mono text-slate-400">
+                <td className="px-4 py-2.5 font-mono text-neutral-200">{ton(signal.ask_ton)}</td>
+                <td className="px-4 py-2.5 font-mono text-neutral-400">
                   {ton(signal.fair_value_ton)}
                 </td>
                 <td
@@ -160,10 +160,10 @@ export default function Opportunities() {
                 <td className="px-4 py-2.5">
                   <Bar value={signal.liquidity_score} />
                 </td>
-                <td className="px-4 py-2.5 font-mono text-slate-400">
+                <td className="px-4 py-2.5 font-mono text-neutral-400">
                   {hours(signal.expected_tts_hours)}
                 </td>
-                <td className="px-4 py-2.5 font-mono text-slate-400">
+                <td className="px-4 py-2.5 font-mono text-neutral-400">
                   {signal.confidence.toFixed(2)}
                 </td>
                 <td className="px-4 py-2.5 text-right">
@@ -172,13 +172,13 @@ export default function Opportunities() {
                       Купить
                     </Button>
                   ) : (
-                    <span className="text-xs text-slate-600">{signal.reject_reason}</span>
+                    <span className="text-xs text-neutral-600">{signal.reject_reason}</span>
                   )}
                 </td>
               </tr>
               {expanded === signal.id && (
                 <tr className="bg-ink-900/60">
-                  <td colSpan={10} className="px-4 py-3 text-xs leading-relaxed text-slate-400">
+                  <td colSpan={10} className="px-4 py-3 text-xs leading-relaxed text-neutral-400">
                     {signal.explanation}
                   </td>
                 </tr>

@@ -62,13 +62,13 @@ export default function Inventory() {
           {data.positions.map((position) => (
             <tr key={position.id}>
               <td className="px-4 py-2.5">
-                <div className="text-slate-200">{position.collection}</div>
-                <div className="text-xs text-slate-600">{position.model ?? '—'}</div>
+                <div className="text-neutral-200">{position.collection}</div>
+                <div className="text-xs text-neutral-600">{position.model ?? '—'}</div>
               </td>
-              <td className="px-4 py-2.5 font-mono text-slate-400">
+              <td className="px-4 py-2.5 font-mono text-neutral-400">
                 {ton(position.buy_price_ton)}
               </td>
-              <td className="px-4 py-2.5 font-mono text-slate-400">
+              <td className="px-4 py-2.5 font-mono text-neutral-400">
                 {ton(position.sell_price_ton)}
               </td>
               <td
@@ -78,10 +78,10 @@ export default function Inventory() {
               >
                 {signedTon(position.net_pnl_ton, 3)}
               </td>
-              <td className="px-4 py-2.5 font-mono text-slate-500">
+              <td className="px-4 py-2.5 font-mono text-neutral-500">
                 {hours(heldHours(position))}
               </td>
-              <td className="px-4 py-2.5 font-mono text-slate-600">
+              <td className="px-4 py-2.5 font-mono text-neutral-600">
                 {hours(position.expected_tts_hours)}
               </td>
             </tr>
@@ -109,11 +109,11 @@ function OpenRow({
   return (
     <tr className={overdue ? 'bg-warn/5' : undefined}>
       <td className="px-4 py-2.5">
-        <div className="text-slate-200">{position.collection}</div>
-        <div className="text-xs text-slate-600">{position.model ?? '—'}</div>
+        <div className="text-neutral-200">{position.collection}</div>
+        <div className="text-xs text-neutral-600">{position.model ?? '—'}</div>
       </td>
-      <td className="px-4 py-2.5 font-mono text-slate-400">{ton(position.buy_price_ton)}</td>
-      <td className="px-4 py-2.5 font-mono text-slate-200">{ton(position.ask_price_ton)}</td>
+      <td className="px-4 py-2.5 font-mono text-neutral-400">{ton(position.buy_price_ton)}</td>
+      <td className="px-4 py-2.5 font-mono text-neutral-200">{ton(position.ask_price_ton)}</td>
       <td
         className={`px-4 py-2.5 font-mono ${
           (position.unrealized_ton ?? 0) > 0 ? 'text-profit' : 'text-loss'
@@ -121,17 +121,17 @@ function OpenRow({
       >
         {signedTon(position.unrealized_ton, 3)}
       </td>
-      <td className="px-4 py-2.5 font-mono text-slate-500">
+      <td className="px-4 py-2.5 font-mono text-neutral-500">
         {hours(held)}
         {overdue && <span className="ml-1 text-warn">!</span>}
       </td>
-      <td className="px-4 py-2.5 font-mono text-slate-500">{position.reprice_count}</td>
+      <td className="px-4 py-2.5 font-mono text-neutral-500">{position.reprice_count}</td>
       <td className="px-4 py-2.5">
         <div className="flex items-center justify-end gap-2">
           <input
             value={price}
             onChange={(event) => setPrice(event.target.value)}
-            className="w-20 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-xs text-slate-200"
+            className="w-20 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-xs text-neutral-200"
           />
           <Button onClick={() => void onAct(() => api.relist(position.id, Number(price)))}>
             {position.status === 'open' ? 'Выставить' : 'Цена'}

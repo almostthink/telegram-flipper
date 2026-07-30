@@ -22,15 +22,20 @@ from datetime import UTC, timedelta
 
 from sqlalchemy import select
 
+from app.adapters import registry
+from app.adapters.base import MarketplaceError
 from app.analytics import pipeline, pricing
 from app.analytics.signals import Signal
 from app.api.ws import hub
 from app.config import Settings
-from app.domain import utcnow
+from app.domain import Market, utcnow
 from app.ingest.scanner import Scanner
+from app.storage import repo
 from app.storage.db import session_scope
 from app.storage.models import Position
+from app.trading import orders as orders_mod
 from app.trading.executor import Executor
+from app.trading.orders import OrderPolicy
 from app.trading.risk import RiskManager
 from app.trading.wallet import BalanceTracker
 
@@ -57,6 +62,30 @@ class CycleReport:
             "repriced": self.repriced,
             "closed": self.closed,
             "blocked": self.blocked[:10],
+            "errors": self.errors[:10],
+        }
+
+
+@dataclass
+class OrderReport:
+    """Итог одного пересмотра заявок."""
+
+    considered: int = 0
+    placed: int = 0
+    cancelled: int = 0
+    simulated: int = 0
+    skipped: dict[str, str] = field(default_factory=dict)
+    log: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict:
+        return {
+            "considered": self.considered,
+            "placed": self.placed,
+            "cancelled": self.cancelled,
+            "simulated": self.simulated,
+            "skipped": dict(list(self.skipped.items())[:20]),
+            "log": self.log[-40:],
             "errors": self.errors[:10],
         }
 
@@ -95,8 +124,10 @@ class TradingEngine:
         self.last_signals: list[Signal] = []
         self.last_report = CycleReport()
         self.last_watch = WatchReport()
+        self.last_orders = OrderReport()
         self.running = False
         self.watching = False
+        self.ordering = False
 
     def reload_settings(self, settings: Settings) -> None:
         self.settings = settings
@@ -149,6 +180,122 @@ class TradingEngine:
 
         await hub.broadcast("cycle", report.as_dict())
         return report
+
+    # --- Ордер-движок ----------------------------------------------------
+
+    async def run_orders(self) -> OrderReport:
+        """Пересмотр заявок на покупку.
+
+        Второй способ набора позиции, обратный охоте за листингами: не
+        ждём чужой ошибки, а сами встаём в очередь покупателей ниже флора.
+        Исполненная заявка даёт подарок в инвентарь, и дальше он идёт по
+        обычному циклу перепродажи.
+        """
+        report = OrderReport()
+        if self.ordering:
+            return self.last_orders
+
+        self.ordering = True
+        try:
+            for market in registry.trading_markets(self.settings):
+                await self._run_orders_on(market, report)
+        except Exception as exc:  # noqa: BLE001 — движок не должен падать
+            log.exception("Ошибка ордер-движка")
+            report.errors.append(str(exc))
+        finally:
+            self.ordering = False
+            self.last_orders = report
+
+        return report
+
+    async def _run_orders_on(self, market: Market, report: OrderReport) -> None:
+        cfg = self.settings.orders
+        adapter = registry.build_adapter(market, self.settings)
+        fee = self.settings.marketplaces[market.value].fee_sell
+
+        policy = OrderPolicy(
+            target_spread=cfg.target_spread,
+            min_floor_ton=cfg.min_floor_ton,
+            max_floor_ton=cfg.max_floor_ton,
+            amount=cfg.amount,
+            max_orders=cfg.max_orders,
+            tick_ton=cfg.tick_ton,
+            fee_sell=fee,
+        )
+
+        try:
+            async with adapter:
+                mine = await adapter.my_orders()
+                tops = await adapter.top_offers()
+                books = await self._build_books(market, mine, tops)
+                plan = orders_mod.plan_orders(books, policy)
+                report.considered += len(books)
+                report.skipped.update(plan.skipped)
+                await self._apply_orders(adapter, plan, report)
+        except MarketplaceError as exc:
+            report.errors.append(f"{market.value}: {exc}")
+
+    async def _build_books(
+        self, market: Market, mine: list, tops: list
+    ) -> list[orders_mod.CollectionBook]:
+        """Сводим флоры, чужие верхние заявки и свои заявки в одну картину."""
+        async with session_scope() as session:
+            floors = await repo.collection_floor_map(session)
+
+        my_by_collection = {item.collection: item for item in mine}
+        # Верхняя заявка площадки может быть нашей же: перебивать себя
+        # означало бы поднимать цену против пустоты.
+        top_by_collection: dict[str, float] = {}
+        for offer in tops:
+            own = my_by_collection.get(offer.collection)
+            if own is not None and abs(own.price_ton - offer.price_ton) < 1e-9:
+                continue
+            if offer.price_ton > top_by_collection.get(offer.collection, 0.0):
+                top_by_collection[offer.collection] = offer.price_ton
+
+        books = []
+        for collection, floor in floors.items():
+            own = my_by_collection.get(collection)
+            books.append(
+                orders_mod.CollectionBook(
+                    collection=collection,
+                    floor_ton=floor,
+                    top_other_ton=top_by_collection.get(collection),
+                    my_order_ton=own.price_ton if own else None,
+                    my_order_id=own.order_id if own else None,
+                    amount=own.amount if own else self.settings.orders.amount,
+                )
+            )
+        return books
+
+    async def _apply_orders(self, adapter, plan, report: OrderReport) -> None:
+        """Исполняем план. В бумажном режиме только считаем — денег не двигаем."""
+        for intent in plan.intents:
+            if self.settings.paper_mode:
+                report.simulated += 1
+                report.log.append(f"[PAPER] {intent.action} {intent.collection} "
+                                  f"{intent.price_ton:.2f} TON — {intent.reason}")
+                continue
+
+            try:
+                if intent.action is orders_mod.OrderAction.CANCEL:
+                    await adapter.cancel_order(intent.order_id or "")
+                    report.cancelled += 1
+                else:
+                    # Поднятие цены — это снятие и постановка заново:
+                    # менять цену стоящей заявки площадка не умеет.
+                    if intent.order_id:
+                        await adapter.cancel_order(intent.order_id)
+                    await adapter.create_order(
+                        intent.collection, intent.price_ton, intent.amount
+                    )
+                    report.placed += 1
+                report.log.append(
+                    f"{intent.action} {intent.collection} "
+                    f"{intent.price_ton:.2f} TON — {intent.reason}"
+                )
+            except MarketplaceError as exc:
+                report.errors.append(f"{intent.collection}: {exc}")
 
     # --- Быстрая петля ---------------------------------------------------
 
@@ -435,6 +582,9 @@ class TradingEngine:
             "watch_enabled": self.settings.watch_enabled,
             "watch_interval_sec": self.settings.watch_interval_sec,
             "last_watch": self.last_watch.as_dict(),
+            "orders_enabled": self.settings.orders.enabled,
+            "orders_interval_sec": self.settings.orders.interval_sec,
+            "last_orders": self.last_orders.as_dict(),
             "last_cycle": self.last_report.as_dict(),
             "breakeven_markup": round(
                 pricing.breakeven_markup(

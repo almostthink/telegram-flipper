@@ -87,69 +87,69 @@ export default function Journal() {
 
           <div className="mb-4 grid gap-4 lg:grid-cols-3">
             <div className="card lg:col-span-2">
-              <h2 className="mb-3 text-sm font-medium text-slate-300">
+              <h2 className="mb-3 text-sm font-medium text-neutral-300">
                 Результат по дням — прибыльных {data.profitable_days}, убыточных{' '}
                 {data.losing_days}
               </h2>
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={data.daily}>
-                    <CartesianGrid stroke="#1e2534" strokeDasharray="3 3" />
-                    <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} minTickGap={30} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 11 }} width={44} />
+                    <CartesianGrid stroke="#26262a" strokeDasharray="3 3" />
+                    <XAxis dataKey="day" tick={{ fill: '#84848c', fontSize: 11 }} minTickGap={30} />
+                    <YAxis tick={{ fill: '#84848c', fontSize: 11 }} width={44} />
                     <Tooltip
                       contentStyle={{
-                        background: '#11151f',
-                        border: '1px solid #2a3244',
+                        background: '#151517',
+                        border: '1px solid #34343a',
                         borderRadius: 8,
                         fontSize: 12,
                       }}
-                      labelStyle={{ color: '#94a3b8' }}
+                      labelStyle={{ color: '#b4b4ba' }}
                     />
                     <RBar dataKey="realized_ton">
                       {data.daily.map((day) => (
                         <Cell
                           key={day.day}
-                          fill={day.realized_ton >= 0 ? '#3ecf8e' : '#ff5c5c'}
+                          fill={day.realized_ton >= 0 ? '#f4f4f6' : '#5a5a60'}
                         />
                       ))}
                     </RBar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="mt-2 text-xs text-slate-500">
+              <p className="mt-2 text-xs text-neutral-500">
                 Один удачный день ничего не доказывает — смотрите на форму распределения
                 и на медиану, а не на максимум.
               </p>
             </div>
 
             <div className="card">
-              <h2 className="mb-3 text-sm font-medium text-slate-300">Качество модели</h2>
+              <h2 className="mb-3 text-sm font-medium text-neutral-300">Качество модели</h2>
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Медианный холд</dt>
-                  <dd className="font-mono text-slate-200">{hours(data.median_hold_hours)}</dd>
+                  <dt className="text-neutral-500">Медианный холд</dt>
+                  <dd className="font-mono text-neutral-200">{hours(data.median_hold_hours)}</dd>
                 </div>
                 <div>
                   <div className="flex justify-between">
-                    <dt className="text-slate-500">Смещение прогноза TTS</dt>
+                    <dt className="text-neutral-500">Смещение прогноза TTS</dt>
                     <dd
                       className={`font-mono ${
-                        (data.tts_bias ?? 1) > 1.3 ? 'text-loss' : 'text-slate-200'
+                        (data.tts_bias ?? 1) > 1.3 ? 'text-loss' : 'text-neutral-200'
                       }`}
                     >
                       {data.tts_bias == null ? '—' : `×${data.tts_bias}`}
                     </dd>
                   </div>
-                  <p className="mt-1 text-xs text-slate-600">
+                  <p className="mt-1 text-xs text-neutral-600">
                     Больше единицы — модель обещает продажу быстрее, чем выходит.
                   </p>
                 </div>
                 <div className="flex justify-between border-t border-ink-600 pt-3">
-                  <dt className="text-slate-500">Бумажный P&L</dt>
+                  <dt className="text-neutral-500">Бумажный P&L</dt>
                   <dd className="font-mono text-warn">{signedTon(data.unrealized_pnl_ton)}</dd>
                 </div>
-                <p className="text-xs text-slate-600">
+                <p className="text-xs text-neutral-600">
                   Считается отдельно от реализованного и прибылью не является.
                 </p>
               </dl>
@@ -160,7 +160,7 @@ export default function Journal() {
 
       {backtest && (
         <div className="card mb-4">
-          <h2 className="mb-3 text-sm font-medium text-slate-300">
+          <h2 className="mb-3 text-sm font-medium text-neutral-300">
             Бэктест за {backtest.days} дней
           </h2>
           {backtest.trades === 0 ? (
@@ -188,21 +188,21 @@ export default function Journal() {
         </div>
       )}
 
-      <h2 className="mb-2 text-sm font-medium text-slate-300">Лента операций</h2>
+      <h2 className="mb-2 text-sm font-medium text-neutral-300">Лента операций</h2>
       {!log.data || log.data.entries.length === 0 ? (
         <Empty>Операций ещё не было</Empty>
       ) : (
         <Table head={['Время', 'Действие', 'Цена', 'Детали']}>
           {log.data.entries.slice(0, 100).map((entry) => (
             <tr key={entry.id} className={entry.ok ? undefined : 'bg-loss/5'}>
-              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500">
+              <td className="whitespace-nowrap px-4 py-2 font-mono text-xs text-neutral-500">
                 {new Date(entry.at).toLocaleString('ru-RU')}
               </td>
               <td className="px-4 py-2">
-                <span className="badge bg-ink-600 text-slate-300">{entry.action}</span>
+                <span className="badge bg-ink-600 text-neutral-300">{entry.action}</span>
               </td>
-              <td className="px-4 py-2 font-mono text-slate-400">{ton(entry.price_ton)}</td>
-              <td className="px-4 py-2 text-xs text-slate-500">{entry.detail}</td>
+              <td className="px-4 py-2 font-mono text-neutral-400">{ton(entry.price_ton)}</td>
+              <td className="px-4 py-2 text-xs text-neutral-500">{entry.detail}</td>
             </tr>
           ))}
         </Table>

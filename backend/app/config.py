@@ -102,6 +102,31 @@ class CollectibleConfig(BaseModel):
     min_number_score: float = Field(default=0.5, ge=0, le=1)
 
 
+class OrderEngine(BaseModel):
+    """Ордер-движок: заявки на покупку ниже флора.
+
+    Способ набора позиции, обратный охоте за чужими дешёвыми лотами. Там
+    мы ждём чужой ошибки, здесь — сами встаём в очередь покупателей и
+    ждём продавца, готового отдать со скидкой.
+    """
+
+    enabled: bool = False
+    #: Насколько ниже флора держим заявку. Меньше комиссии площадки
+    #: ставить бессмысленно: покупка перестаёт окупаться.
+    target_spread: float = Field(default=0.03, ge=0, le=0.9)
+    #: Границы флора коллекций, в которых работаем.
+    min_floor_ton: float = Field(default=0.0, ge=0)
+    max_floor_ton: float = Field(default=4.0, ge=0)
+    #: Сколько подарков просить в одной заявке.
+    amount: int = Field(default=1, ge=1, le=50)
+    #: Потолок одновременных заявок — прямое ограничение капитала.
+    max_orders: int = Field(default=20, ge=1, le=200)
+    #: Шаг перебивания конкурента.
+    tick_ton: float = Field(default=0.01, gt=0)
+    #: Период пересмотра заявок, секунды.
+    interval_sec: float = Field(default=30.0, ge=5.0, le=600.0)
+
+
 class RiskLimits(BaseModel):
     """Жёсткие лимиты. Действуют в обоих режимах, но критичны для автомата."""
 
@@ -170,6 +195,7 @@ class Settings(BaseSettings):
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
     collectible: CollectibleConfig = Field(default_factory=CollectibleConfig)
     risk: RiskLimits = Field(default_factory=RiskLimits)
+    orders: OrderEngine = Field(default_factory=OrderEngine)
     sell: SellStrategy = Field(default_factory=SellStrategy)
     marketplaces: dict[str, MarketplaceConfig] = Field(
         default_factory=lambda: {

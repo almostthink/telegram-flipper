@@ -34,7 +34,7 @@ export default function Market() {
       <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
         <div className="card max-h-[calc(100vh-12rem)] overflow-y-auto p-2">
           {!list.data || list.data.collections.length === 0 ? (
-            <div className="p-4 text-sm text-slate-500">
+            <div className="p-4 text-sm text-neutral-500">
               Коллекций пока нет. Запустите цикл на «Обзоре».
             </div>
           ) : (
@@ -45,11 +45,11 @@ export default function Market() {
                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                   selected === row.collection
                     ? 'bg-accent/15 text-accent'
-                    : 'text-slate-400 hover:bg-ink-700'
+                    : 'text-neutral-400 hover:bg-ink-700'
                 }`}
               >
                 <span className="truncate">{row.collection}</span>
-                <span className="ml-2 shrink-0 font-mono text-xs text-slate-500">
+                <span className="ml-2 shrink-0 font-mono text-xs text-neutral-500">
                   {row.floor_ton.toFixed(1)}
                 </span>
               </button>
@@ -128,18 +128,18 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
       )}
 
       <div className="card">
-        <h2 className="mb-3 text-sm font-medium text-slate-300">Состав балла ликвидности</h2>
+        <h2 className="mb-3 text-sm font-medium text-neutral-300">Состав балла ликвидности</h2>
         <div className="grid gap-3 sm:grid-cols-4">
           {Object.entries(liq.parts).map(([name, value]) => (
             <div key={name}>
-              <div className="mb-1 text-xs text-slate-500">
+              <div className="mb-1 text-xs text-neutral-500">
                 {PART_LABELS[name] ?? name}
                 {liq.missing.includes(name) && (
-                  <span className="ml-1 text-slate-600">— нет источника</span>
+                  <span className="ml-1 text-neutral-600">— нет источника</span>
                 )}
               </div>
               {liq.missing.includes(name) ? (
-                <div className="text-xs text-slate-600">
+                <div className="text-xs text-neutral-600">
                   вес перераспределён на остальные
                 </div>
               ) : (
@@ -154,31 +154,31 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
         <div className="card">
           {/* Окно запроса — 14 дней, но данные только свои: график
               начинается с первого запуска, а не с истории площадки. */}
-          <h2 className="mb-3 text-sm font-medium text-slate-300">
+          <h2 className="mb-3 text-sm font-medium text-neutral-300">
             Флор — собственные наблюдения
-            <span className="ml-2 text-xs text-slate-500">
+            <span className="ml-2 text-xs text-neutral-500">
               с {new Date(data.floor_history[0].t).toLocaleString('ru')}
             </span>
           </h2>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data.floor_history}>
-                <CartesianGrid stroke="#1e2534" strokeDasharray="3 3" />
-                <XAxis dataKey="t" tick={{ fill: '#64748b', fontSize: 11 }} minTickGap={40} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} width={48} />
+                <CartesianGrid stroke="#26262a" strokeDasharray="3 3" />
+                <XAxis dataKey="t" tick={{ fill: '#84848c', fontSize: 11 }} minTickGap={40} />
+                <YAxis tick={{ fill: '#84848c', fontSize: 11 }} width={48} />
                 <Tooltip
                   contentStyle={{
-                    background: '#11151f',
-                    border: '1px solid #2a3244',
+                    background: '#151517',
+                    border: '1px solid #34343a',
                     borderRadius: 8,
                     fontSize: 12,
                   }}
-                  labelStyle={{ color: '#94a3b8' }}
+                  labelStyle={{ color: '#b4b4ba' }}
                 />
                 <Line
                   type="monotone"
                   dataKey="floor_ton"
-                  stroke="#4c8dff"
+                  stroke="#e6e6e8"
                   strokeWidth={2}
                   dot={false}
                 />
@@ -190,16 +190,16 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
 
       {data.attributes.length > 0 && (
         <div>
-          <h2 className="mb-2 text-sm font-medium text-slate-300">
+          <h2 className="mb-2 text-sm font-medium text-neutral-300">
             Атрибуты и их премия к флору
           </h2>
           <Table head={['Тип', 'Значение', 'Флор', 'Редкость', 'Множитель']}>
             {data.attributes.slice(0, 30).map((attr) => (
               <tr key={`${attr.kind}-${attr.name}`}>
-                <td className="px-4 py-2 text-slate-500">{KIND_LABELS[attr.kind] ?? attr.kind}</td>
-                <td className="px-4 py-2 text-slate-200">{attr.name}</td>
-                <td className="px-4 py-2 font-mono text-slate-400">{ton(attr.floor_ton)}</td>
-                <td className="px-4 py-2 font-mono text-slate-500">
+                <td className="px-4 py-2 text-neutral-500">{KIND_LABELS[attr.kind] ?? attr.kind}</td>
+                <td className="px-4 py-2 text-neutral-200">{attr.name}</td>
+                <td className="px-4 py-2 font-mono text-neutral-400">{ton(attr.floor_ton)}</td>
+                <td className="px-4 py-2 font-mono text-neutral-500">
                   {/* Площадки отдают промилле, но знак ‰ в мелком кегле
                       неотличим от %, поэтому показываем проценты. */}
                   {attr.rarity_permille == null
@@ -217,29 +217,29 @@ function CollectionView({ data }: { data: NonNullable<Awaited<ReturnType<typeof 
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
-          <h2 className="mb-2 text-sm font-medium text-slate-300">Книга заявок</h2>
+          <h2 className="mb-2 text-sm font-medium text-neutral-300">Книга заявок</h2>
           <Table head={['Цена', 'Модель', 'Площадка']}>
             {data.book.slice(0, 20).map((item) => (
               <tr key={`${item.market}-${item.listing_id}`}>
-                <td className="px-4 py-2 font-mono text-slate-200">{ton(item.price_ton)}</td>
-                <td className="px-4 py-2 text-slate-400">{item.model ?? '—'}</td>
-                <td className="px-4 py-2 text-xs text-slate-600">{item.market}</td>
+                <td className="px-4 py-2 font-mono text-neutral-200">{ton(item.price_ton)}</td>
+                <td className="px-4 py-2 text-neutral-400">{item.model ?? '—'}</td>
+                <td className="px-4 py-2 text-xs text-neutral-600">{item.market}</td>
               </tr>
             ))}
           </Table>
         </div>
 
         <div>
-          <h2 className="mb-2 text-sm font-medium text-slate-300">Последние сделки</h2>
+          <h2 className="mb-2 text-sm font-medium text-neutral-300">Последние сделки</h2>
           {data.recent_sales.length === 0 ? (
             <Empty>История сделок ещё не собрана</Empty>
           ) : (
             <Table head={['Цена', 'Модель', 'Продалось за']}>
               {data.recent_sales.slice(0, 20).map((sale, index) => (
                 <tr key={`${sale.sold_at}-${index}`}>
-                  <td className="px-4 py-2 font-mono text-slate-200">{ton(sale.price_ton)}</td>
-                  <td className="px-4 py-2 text-slate-400">{sale.model ?? '—'}</td>
-                  <td className="px-4 py-2 font-mono text-slate-500">{hours(sale.tts_hours)}</td>
+                  <td className="px-4 py-2 font-mono text-neutral-200">{ton(sale.price_ton)}</td>
+                  <td className="px-4 py-2 text-neutral-400">{sale.model ?? '—'}</td>
+                  <td className="px-4 py-2 font-mono text-neutral-500">{hours(sale.tts_hours)}</td>
                 </tr>
               ))}
             </Table>

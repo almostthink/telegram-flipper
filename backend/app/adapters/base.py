@@ -29,6 +29,7 @@ from app.domain import (
     CollectionOffer,
     Listing,
     Market,
+    MarketOrder,
     OwnedGift,
 )
 
@@ -259,6 +260,7 @@ class Marketplace(ABC):
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
         raw: bool = False,
+        path_params: dict[str, Any] | None = None,
     ) -> Any:
         """Запрос с ретраями, разбором ошибок авторизации и rate-limit.
 
@@ -267,6 +269,9 @@ class Marketplace(ABC):
         страницы лежит рядом с массивом, и после выборки он теряется.
         """
         spec = self.endpoints.get(endpoint)
+        # Часть адресов содержит идентификатор прямо в пути: отмена ордера
+        # адресуется как /orders/cancel/<id>, тела у неё нет.
+        path = spec.path.format(**path_params) if path_params else spec.path
         await self.open()
         assert self._client is not None
 
@@ -275,7 +280,7 @@ class Marketplace(ABC):
             await self._limiter.wait()
             try:
                 response = await self._client.request(
-                    spec.method, spec.path, params=params, json=json_body
+                    spec.method, path, params=params, json=json_body
                 )
             except httpx.HTTPError as exc:
                 last_exc = exc
@@ -305,7 +310,7 @@ class Marketplace(ABC):
             if response.status_code >= 400:
                 self.last_error = f"HTTP {response.status_code}"
                 raise MarketplaceError(
-                    f"{self.name}: {response.status_code} на {spec.path} — {response.text[:200]}"
+                    f"{self.name}: {response.status_code} на {path} — {response.text[:200]}"
                 )
 
             self.last_error = None
@@ -313,7 +318,7 @@ class Marketplace(ABC):
             try:
                 payload = response.json()
             except ValueError as exc:
-                raise MarketplaceError(f"{self.name}: ответ не JSON на {spec.path}") from exc
+                raise MarketplaceError(f"{self.name}: ответ не JSON на {path}") from exc
             return payload if raw else dig(payload, spec.json_path)
 
         self.last_error = str(last_exc)
@@ -378,6 +383,16 @@ class Marketplace(ABC):
             return response.json()
         except ValueError as exc:
             raise MarketplaceError(f"{self.name}: {key} не JSON") from exc
+
+    async def my_orders(self) -> list[MarketOrder]:
+        """Наши стоящие заявки на покупку."""
+        return []
+
+    async def create_order(self, collection: str, price_ton: float, amount: int) -> str:
+        raise NotImplementedError(f"{self.name} не поддерживает заявки")
+
+    async def cancel_order(self, order_id: str) -> None:
+        raise NotImplementedError(f"{self.name} не поддерживает заявки")
 
     async def top_offers(self) -> list[CollectionOffer]:
         """Верхние заявки на покупку по всем коллекциям — одним запросом.

@@ -4,25 +4,40 @@
 
 @layer base {
   body {
-    @apply bg-ink-900 text-slate-200 antialiased;
+    /* Основной текст намеренно не белый: чистый белый на тёмном режет
+       глаз, а смотреть в этот экран приходится часами. */
+    @apply bg-ink-900 text-neutral-300 antialiased;
     font-feature-settings: 'tnum' 1;
   }
 }
 
 @layer components {
+  /* Карточка без тени и с малым радиусом: спокойнее и не отвлекает от
+     чисел, ради которых её и открывают. */
   .card {
-    @apply rounded-xl border border-ink-600 bg-ink-800 p-5;
+    @apply rounded-lg border border-ink-600 bg-ink-800 p-5;
   }
 
   .stat-label {
-    @apply text-xs uppercase tracking-wide text-slate-500;
+    @apply text-xs uppercase tracking-wide text-neutral-500;
   }
 
   .stat-value {
-    @apply mt-1 font-mono text-2xl text-slate-100;
+    @apply mt-1 font-mono text-2xl tabular-nums text-neutral-100;
   }
 
   .badge {
-    @apply rounded-md px-2 py-0.5 text-xs font-medium;
+    @apply rounded px-2 py-0.5 text-xs font-medium;
+  }
+
+  /* Прибыль и убыток различаются светлотой, а не цветом. Одной светлоты
+     мало, поэтому у убытка есть ещё и полоса слева: признак, заметный
+     без сравнения с соседним числом. */
+  .tone-profit {
+    @apply text-profit;
+  }
+
+  .tone-loss {
+    @apply border-l-2 border-ink-500 pl-2 text-loss;
   }
 }

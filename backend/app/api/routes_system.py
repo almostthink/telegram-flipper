@@ -55,6 +55,7 @@ async def update_config(patch: dict) -> Settings:
         updated.auto_trade = False
 
     interval_changed = updated.watch_interval_sec != settings.watch_interval_sec
+    orders_changed = updated.orders.interval_sec != settings.orders.interval_sec
 
     for field in updated.model_fields:
         setattr(settings, field, getattr(updated, field))
@@ -66,6 +67,11 @@ async def update_config(patch: dict) -> Settings:
         from app import scheduler
 
         scheduler.reschedule_watch(settings.watch_interval_sec)
+
+    if orders_changed:
+        from app import scheduler
+
+        scheduler.reschedule_orders(settings.orders.interval_sec)
 
     return settings
 

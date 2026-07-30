@@ -37,6 +37,13 @@ async def run_cycle(deep: bool = Query(default=True)) -> dict:
     return report.as_dict()
 
 
+@router.post("/orders/run")
+async def run_orders() -> dict:
+    """Пересмотреть заявки прямо сейчас, не дожидаясь расписания."""
+    report = await get_engine().run_orders()
+    return report.as_dict()
+
+
 @router.post("/engine/kill")
 async def kill_switch() -> dict:
     engine = get_engine()

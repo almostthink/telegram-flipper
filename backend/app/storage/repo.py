@@ -473,6 +473,22 @@ async def seed_previous_day_floors(
     return len(rows)
 
 
+async def collection_floor_map(session: AsyncSession, *, hours: float = 2.0) -> dict[str, float]:
+    """Свежие флоры всех коллекций: имя → минимальная цена по площадкам.
+
+    Ордер-движку нужна картина рынка целиком, а не по одной коллекции:
+    он расставляет заявки там, где выгоднее, и выбирать не из чего, если
+    спрашивать по очереди.
+    """
+    cutoff = utcnow() - timedelta(hours=hours)
+    query = (
+        select(FloorSnapshot.collection, func.min(FloorSnapshot.floor_ton))
+        .where(FloorSnapshot.captured_at >= cutoff, FloorSnapshot.floor_ton > 0)
+        .group_by(FloorSnapshot.collection)
+    )
+    return {name: floor for name, floor in (await session.execute(query)).all()}
+
+
 async def best_offer(session: AsyncSession, collection: str) -> float | None:
     """Лучшая заявка на покупку за последний час.
 

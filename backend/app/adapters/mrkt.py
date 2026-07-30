@@ -46,6 +46,7 @@ from app.domain import (
     Gift,
     Listing,
     Market,
+    MarketOrder,
     OwnedGift,
 )
 
@@ -93,6 +94,15 @@ DEFAULT_ENDPOINTS = MarketEndpoints(
         # Верхние заявки на покупку по коллекциям — цена гарантированного
         # выхода. Без них не считается опора спроса в балле ликвидности.
         "orders": EndpointSpec("/api/v1/orders/all-collection-top"),
+        # Заявки ордер-движка. Пути из бандла мини-аппа; тело создания
+        # заявки в нём не читается — форма собирает его из своих полей.
+        # Поэтому состав тела помечен как предположение и правится
+        # импортом HAR с созданием заявки.
+        "my_orders": EndpointSpec(
+            "/api/v1/orders/get-my-orders", method="POST", json_path="orders"
+        ),
+        "order_create": EndpointSpec("/api/v1/orders/create", method="POST"),
+        "order_cancel": EndpointSpec("/api/v1/orders/cancel/{order_id}", method="POST"),
     },
 )
 
@@ -529,6 +539,61 @@ class MrktAdapter(Marketplace):
                 )
             )
         return offers
+
+    # --- Заявки на покупку ----------------------------------------------
+
+    async def my_orders(self) -> list[MarketOrder]:
+        """Наши стоящие заявки. Тело подтверждено: {…фильтры, cursor, count}."""
+        orders: list[MarketOrder] = []
+        query: dict[str, object] = {"collectionNames": []}
+
+        async for rows in self._pages("my_orders", query, limit=100, max_pages=MAX_PAGES):
+            for raw in rows:
+                order_id = _as_str(pick(raw, "id", "orderId"))
+                collection = pick(raw, "collectionName", "collection", "name")
+                price = nano_to_ton(
+                    pick(raw, "price", "nanoTons", "priceNanoTons", "maxPrice")
+                )
+                if not order_id or not collection or price is None:
+                    continue
+                amount = pick(raw, "amount", "count", "quantity", default=1)
+                orders.append(
+                    MarketOrder(
+                        market=self.name,
+                        order_id=order_id,
+                        collection=str(collection),
+                        price_ton=price,
+                        amount=int(amount) if isinstance(amount, int | float) else 1,
+                    )
+                )
+        return orders
+
+    async def create_order(self, collection: str, price_ton: float, amount: int) -> str:
+        """Ставим заявку на покупку.
+
+        Состав тела — предположение по соседним запросам площадки: она
+        всюду принимает список имён коллекций и цену в нанотонах. Проверить
+        его по бандлу не вышло, форма собирает тело из своих полей.
+        Правится импортом HAR с созданием заявки, без пересборки.
+        """
+        payload = await self.request(
+            "order_create",
+            json_body={
+                "collectionNames": [collection],
+                "price": _to_nano(price_ton),
+                "amount": max(int(amount), 1),
+            },
+        )
+        raw = payload if isinstance(payload, dict) else {}
+        order_id = pick(raw, "id", "orderId")
+        if not order_id:
+            raise MarketplaceError(
+                f"заявку по «{collection}» площадка не приняла — в ответе нет её номера"
+            )
+        return str(order_id)
+
+    async def cancel_order(self, order_id: str) -> None:
+        await self.request("order_cancel", path_params={"order_id": order_id})
 
     # --- Торговля -------------------------------------------------------
 

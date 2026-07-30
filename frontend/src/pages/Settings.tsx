@@ -49,18 +49,18 @@ export default function Settings() {
       )}
 
       <div className="mb-4 card">
-        <h2 className="mb-1 text-sm font-medium text-slate-300">Режим работы</h2>
-        <p className="mb-4 text-xs text-slate-500">
+        <h2 className="mb-1 text-sm font-medium text-neutral-300">Режим работы</h2>
+        <p className="mb-4 text-xs text-neutral-500">
           Paper-режим симулирует сделки на реальных рыночных данных. Выключайте его
           только после того, как бэктест и журнал покажут осмысленный результат.
         </p>
         {config.data && (
           <div className="flex items-center justify-between rounded-lg bg-ink-700 px-4 py-3">
             <div>
-              <div className="text-sm text-slate-200">
+              <div className="text-sm text-neutral-200">
                 {config.data.paper_mode ? 'PAPER — симуляция' : 'LIVE — реальные деньги'}
               </div>
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-neutral-500">
                 {config.data.paper_mode
                   ? 'Деньги не тратятся'
                   : 'Сделки исполняются на вашем балансе'}
@@ -86,8 +86,8 @@ export default function Settings() {
       {config.data && (
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="card">
-            <h2 className="mb-1 text-sm font-medium text-slate-300">Пороги отбора</h2>
-            <p className="mb-4 text-xs text-slate-500">
+            <h2 className="mb-1 text-sm font-medium text-neutral-300">Пороги отбора</h2>
+            <p className="mb-4 text-xs text-neutral-500">
               Лот должен пройти все пороги одновременно.
             </p>
             <div className="space-y-3">
@@ -120,8 +120,8 @@ export default function Settings() {
           </div>
 
           <div className="card">
-            <h2 className="mb-1 text-sm font-medium text-slate-300">Стратегия продажи</h2>
-            <p className="mb-4 text-xs text-slate-500">
+            <h2 className="mb-1 text-sm font-medium text-neutral-300">Стратегия продажи</h2>
+            <p className="mb-4 text-xs text-neutral-500">
               Выставляем с наценкой, затем снижаем цену шагами до порога безубытка.
             </p>
             <div className="space-y-3">
@@ -149,10 +149,10 @@ export default function Settings() {
           </div>
 
           <div className="card lg:col-span-2">
-            <h2 className="mb-1 text-sm font-medium text-slate-300">
+            <h2 className="mb-1 text-sm font-medium text-neutral-300">
               Коллекционная ценность
             </h2>
-            <p className="mb-4 text-xs leading-relaxed text-slate-500">
+            <p className="mb-4 text-xs leading-relaxed text-neutral-500">
               Рынок платит надбавку за порядковый номер, за отдельные фоны и
               за монохром — независимо от редкости модели. Подарок #1 стоит
               кратно дороже #40597 при одинаковых атрибутах. Эти настройки
@@ -210,7 +210,7 @@ export default function Settings() {
                   }
                 />
                 <div className="flex items-center justify-between gap-3 pt-1">
-                  <span className="text-sm text-slate-400">
+                  <span className="text-sm text-neutral-400">
                     Покупать только коллекционные
                   </span>
                   <Button
@@ -241,8 +241,8 @@ export default function Settings() {
           </div>
 
           <div className="card lg:col-span-2">
-            <h2 className="mb-1 text-sm font-medium text-slate-300">Комиссии площадок</h2>
-            <p className="mb-4 text-xs leading-relaxed text-slate-500">
+            <h2 className="mb-1 text-sm font-medium text-neutral-300">Комиссии площадок</h2>
+            <p className="mb-4 text-xs leading-relaxed text-neutral-500">
               Указаны долей: 0.05 = 5%. Комиссия MRKT подтверждена записью
               трафика — 2%, и берётся она с покупателя сверх цены продавца.
               <br />
@@ -261,9 +261,9 @@ export default function Settings() {
                     key={market.key}
                     className="flex items-center justify-between rounded-lg bg-ink-700 px-4 py-2.5"
                   >
-                    <div className="text-sm text-slate-300">
+                    <div className="text-sm text-neutral-300">
                       {market.label}
-                      <span className="ml-2 text-xs text-slate-500">
+                      <span className="ml-2 text-xs text-neutral-500">
                         {cfg.trade_enabled
                           ? 'торговля'
                           : cfg.enabled
@@ -338,25 +338,25 @@ function TokensCard({
 
   return (
     <div className="card">
-      <h2 className="mb-1 text-sm font-medium text-slate-300">Токены площадок</h2>
-      <p className="mb-4 text-xs leading-relaxed text-slate-500">
+      <h2 className="mb-1 text-sm font-medium text-neutral-300">Токены площадок</h2>
+      <p className="mb-4 text-xs leading-relaxed text-neutral-500">
         DevTools → Network → любой запрос к площадке → заголовок Authorization.
-        Вставляйте значение <span className="text-slate-300">как есть</span>:
+        Вставляйте значение <span className="text-neutral-300">как есть</span>:
         схемы у площадок разные и приложение ничего не дописывает.
       </p>
 
-      <ul className="mb-4 space-y-1 text-xs leading-relaxed text-slate-500">
+      <ul className="mb-4 space-y-1 text-xs leading-relaxed text-neutral-500">
         <li>
-          <span className="text-slate-300">MRKT</span> — собственный токен без
+          <span className="text-neutral-300">MRKT</span> — собственный токен без
           префикса, UUID из 36 символов. Площадка выдаёт его в обмен на
           initData через <span className="font-mono">POST /api/v1/auth</span>.
         </li>
         <li>
-          <span className="text-slate-300">Portals</span> —{' '}
+          <span className="text-neutral-300">Portals</span> —{' '}
           <span className="font-mono">tma&nbsp;…</span>, то есть initData как есть.
         </li>
         <li>
-          <span className="text-slate-300">GetGems</span> — заголовка
+          <span className="text-neutral-300">GetGems</span> — заголовка
           Authorization нет вовсе, сессия лежит в cookie. Скопируйте строку
           Cookie целиком (там{' '}
           <span className="font-mono">AUTH_TOKEN</span> и{' '}
@@ -364,7 +364,7 @@ function TokensCard({
           её в нужный заголовок.
         </li>
       </ul>
-      <p className="mb-4 text-xs text-slate-500">Живёт 1–7 дней.</p>
+      <p className="mb-4 text-xs text-neutral-500">Живёт 1–7 дней.</p>
 
       <div className="mb-4 space-y-2">
         {MARKETS.map((item) => {
@@ -374,16 +374,16 @@ function TokensCard({
               key={item.key}
               className="flex items-center justify-between rounded-lg bg-ink-700 px-3 py-2 text-sm"
             >
-              <span className="text-slate-300">
+              <span className="text-neutral-300">
                 {item.label}
                 {!item.tradable && (
-                  <span className="ml-2 text-xs text-slate-600">только цены</span>
+                  <span className="ml-2 text-xs text-neutral-600">только цены</span>
                 )}
               </span>
               <span
                 className={`text-xs ${
                   !state?.configured
-                    ? 'text-slate-600'
+                    ? 'text-neutral-600'
                     : state.stale
                       ? 'text-warn'
                       : 'text-profit'
@@ -404,7 +404,7 @@ function TokensCard({
         <select
           value={market}
           onChange={(event) => setMarket(event.target.value)}
-          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-200"
+          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-neutral-200"
         >
           {MARKETS.map((item) => (
             <option key={item.key} value={item.key}>
@@ -417,7 +417,7 @@ function TokensCard({
           onChange={(event) => setToken(event.target.value)}
           rows={3}
           placeholder="tma query_id=..."
-          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-neutral-200"
         />
         <Button variant="primary" disabled={!token.trim()} onClick={() => void save()}>
           Сохранить токен
@@ -453,10 +453,10 @@ function UserbotCard({
 
   return (
     <div className="card">
-      <h2 className="mb-1 text-sm font-medium text-slate-300">
+      <h2 className="mb-1 text-sm font-medium text-neutral-300">
         Автообновление токена (userbot)
       </h2>
-      <p className="mb-4 text-xs text-slate-500">
+      <p className="mb-4 text-xs text-neutral-500">
         Приложение само логинится в Telegram и обновляет токен. Работает автономно,
         но требует хранить сессию Telegram локально и повышает риск блокировки
         аккаунта — используйте отдельный.
@@ -472,21 +472,21 @@ function UserbotCard({
         </Alert>
       ) : (
         <div className="space-y-2">
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-neutral-500">
             Получить на my.telegram.org →&nbsp;API development tools
           </div>
           <input
             value={apiId}
             onChange={(event) => setApiId(event.target.value)}
             placeholder="api_id"
-            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-neutral-200"
           />
           <input
             value={apiHash}
             onChange={(event) => setApiHash(event.target.value)}
             placeholder="api_hash"
             type="password"
-            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-neutral-200"
           />
           <div className="flex gap-2">
             <Button
@@ -550,7 +550,7 @@ function TelegramLogin({
   if (auth.data?.session_ready && stage === 'phone') {
     return (
       <div className="mt-3 flex items-center justify-between rounded-lg bg-ink-700 px-3 py-2">
-        <span className="text-xs text-slate-400">Вход в Telegram выполнен</span>
+        <span className="text-xs text-neutral-400">Вход в Telegram выполнен</span>
         <Button
           onClick={() =>
             void api
@@ -568,7 +568,7 @@ function TelegramLogin({
 
   return (
     <div className="mt-3 space-y-2 border-t border-ink-500 pt-3">
-      <div className="text-xs text-slate-500">
+      <div className="text-xs text-neutral-500">
         Вход в Telegram. Код придёт в само приложение — введите его сюда, а не в консоль.
       </div>
 
@@ -580,7 +580,7 @@ function TelegramLogin({
             value={phone}
             onChange={(event) => setPhone(event.target.value)}
             placeholder="+79991234567"
-            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-neutral-200"
           />
           <Button
             variant="primary"
@@ -600,7 +600,7 @@ function TelegramLogin({
             value={code}
             onChange={(event) => setCode(event.target.value)}
             placeholder="код из Telegram"
-            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-slate-200"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-sm text-neutral-200"
           />
           <Button
             variant="primary"
@@ -629,7 +629,7 @@ function TelegramLogin({
             type="password"
             onChange={(event) => setPassword(event.target.value)}
             placeholder="облачный пароль"
-            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-200"
+            className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-neutral-200"
           />
           <Button
             variant="primary"
@@ -680,42 +680,42 @@ function HarCard({
 
   return (
     <div className="card">
-      <h2 className="mb-1 text-sm font-medium text-slate-300">Импорт эндпоинтов из HAR</h2>
-      <p className="mb-3 text-xs leading-relaxed text-slate-500">
+      <h2 className="mb-1 text-sm font-medium text-neutral-300">Импорт эндпоинтов из HAR</h2>
+      <p className="mb-3 text-xs leading-relaxed text-neutral-500">
         У MRKT и Portals нет официального API, и адреса запросов меняются. HAR —
         это запись сетевых запросов браузера: из неё приложение достанет реальные
         пути и заголовок авторизации. Файл разбирается локально и не сохраняется.
       </p>
 
-      <ol className="mb-4 space-y-1.5 text-xs leading-relaxed text-slate-400">
+      <ol className="mb-4 space-y-1.5 text-xs leading-relaxed text-neutral-400">
         <li>
-          <span className="text-slate-500">1.</span> Откройте{' '}
-          <span className="font-mono text-slate-300">web.telegram.org/k/</span> в Chrome
+          <span className="text-neutral-500">1.</span> Откройте{' '}
+          <span className="font-mono text-neutral-300">web.telegram.org/k/</span> в Chrome
           или Edge и войдите в аккаунт. Мобильное приложение не подойдёт — нужны
           инструменты разработчика.
         </li>
         <li>
-          <span className="text-slate-500">2.</span> Найдите бота площадки и запустите
-          мини-апп. Нажмите <span className="font-mono text-slate-300">F12</span> →
-          вкладка <span className="font-mono text-slate-300">Network</span>, включите{' '}
-          <span className="font-mono text-slate-300">Preserve log</span>, фильтр{' '}
-          <span className="font-mono text-slate-300">Fetch/XHR</span>.
+          <span className="text-neutral-500">2.</span> Найдите бота площадки и запустите
+          мини-апп. Нажмите <span className="font-mono text-neutral-300">F12</span> →
+          вкладка <span className="font-mono text-neutral-300">Network</span>, включите{' '}
+          <span className="font-mono text-neutral-300">Preserve log</span>, фильтр{' '}
+          <span className="font-mono text-neutral-300">Fetch/XHR</span>.
         </li>
         <li>
-          <span className="text-slate-500">3.</span> Пройдите по разделам: список
+          <span className="text-neutral-500">3.</span> Пройдите по разделам: список
           коллекций → конкретная коллекция → прокрутите лоты → фильтр по модели →
           история сделок → профиль с балансом. Каждое действие даёт свой эндпоинт.
         </li>
         <li>
-          <span className="text-slate-500">4.</span> Правый клик в таблице запросов →{' '}
-          <span className="font-mono text-slate-300">Save all as HAR with content</span>.
+          <span className="text-neutral-500">4.</span> Правый клик в таблице запросов →{' '}
+          <span className="font-mono text-neutral-300">Save all as HAR with content</span>.
           Если DevTools предложит два варианта, берите{' '}
-          <span className="font-mono text-slate-300">with sensitive data</span>:
+          <span className="font-mono text-neutral-300">with sensitive data</span>:
           «sanitized» вырезает заголовок авторизации. Одного пункта в меню тоже
           достаточно — он и есть полный.
         </li>
         <li>
-          <span className="text-slate-500">5.</span> Загрузите файл кнопкой ниже.
+          <span className="text-neutral-500">5.</span> Загрузите файл кнопкой ниже.
           Импорт можно повторять: новые пути накладываются поверх сохранённых,
           остальные остаются как были.
         </li>
@@ -740,7 +740,7 @@ function HarCard({
         <select
           value={market}
           onChange={(event) => setMarket(event.target.value)}
-          className="rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-slate-200"
+          className="rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-neutral-200"
         >
           {MARKETS.map((item) => (
             <option key={item.key} value={item.key}>
@@ -772,7 +772,7 @@ function HarCard({
           Сбросить адреса
         </Button>
       </div>
-      <p className="mt-2 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-neutral-500">
         Сброс возвращает адреса площадки к значениям по умолчанию — на случай,
         если импорт записал не то.
       </p>
@@ -789,15 +789,15 @@ function HarCard({
             </div>
           )}
           {result.rejected_hosts.length > 0 && (
-            <div className="mb-2 text-slate-500">
+            <div className="mb-2 text-neutral-500">
               Пропущены находки с посторонних доменов:{' '}
               {result.rejected_hosts.join(', ')}
             </div>
           )}
-          <div className="mb-2 text-slate-400">Базовый адрес: {result.base_url}</div>
+          <div className="mb-2 text-neutral-400">Базовый адрес: {result.base_url}</div>
           {result.found.map((item) => (
-            <div key={item.endpoint} className="flex justify-between font-mono text-slate-500">
-              <span className="text-slate-300">{item.endpoint}</span>
+            <div key={item.endpoint} className="flex justify-between font-mono text-neutral-500">
+              <span className="text-neutral-300">{item.endpoint}</span>
               <span>
                 {item.method} {item.path}
                 {item.records_in_sample > 0 && ` (${item.records_in_sample} записей)`}
@@ -821,15 +821,15 @@ function BackdropList({
 
   return (
     <div>
-      <div className="mb-1 text-sm text-slate-400">Ценные фоны</div>
-      <p className="mb-2 text-xs text-slate-500">
+      <div className="mb-1 text-sm text-neutral-400">Ценные фоны</div>
+      <p className="mb-2 text-xs text-neutral-500">
         По одному в строке. Регистр не важен.
       </p>
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         rows={6}
-        className="w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+        className="w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-neutral-200"
         placeholder="Black&#10;Onyx Black"
       />
       <div className="mt-2">
@@ -858,12 +858,12 @@ function Field({
 
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-slate-400">{label}</span>
+      <span className="text-sm text-neutral-400">{label}</span>
       <div className="flex gap-2">
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          className="w-24 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-sm text-slate-200"
+          className="w-24 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-sm text-neutral-200"
         />
         <Button
           disabled={draft === String(value) || Number.isNaN(Number(draft))}
@@ -893,7 +893,7 @@ function ProxyField({
           value={url}
           onChange={(event) => setUrl(event.target.value)}
           placeholder="socks5://127.0.0.1:1080 — прокси, если нужен"
-          className="flex-1 rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+          className="flex-1 rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-neutral-200"
         />
         <Button
           onClick={() =>
@@ -907,7 +907,7 @@ function ProxyField({
           Сохранить
         </Button>
       </div>
-      <div className="text-xs text-slate-600">
+      <div className="text-xs text-neutral-600">
         Заполняйте, только если Telegram недоступен напрямую. Пустое поле убирает прокси.
       </div>
     </div>

@@ -40,6 +40,17 @@ export interface EngineStatus {
   breakeven_markup: number
   watch_enabled: boolean
   watch_interval_sec: number
+  orders_enabled: boolean
+  orders_interval_sec: number
+  last_orders: {
+    considered: number
+    placed: number
+    cancelled: number
+    simulated: number
+    skipped: Record<string, string>
+    log: string[]
+    errors: string[]
+  }
   last_watch: {
     seen: number
     evaluated: number
@@ -257,6 +268,16 @@ export interface AppConfig {
     require_collectible: boolean
     min_number_score: number
   }
+  orders: {
+    enabled: boolean
+    target_spread: number
+    min_floor_ton: number
+    max_floor_ton: number
+    amount: number
+    max_orders: number
+    tick_ton: number
+    interval_sec: number
+  }
   risk: Record<string, number | string[]>
   sell: Record<string, number>
   marketplaces: Record<
@@ -306,6 +327,8 @@ export const api = {
   engine: () => request<EngineStatus>('/engine'),
   runCycle: (deep = true) =>
     request<Record<string, unknown>>(`/engine/cycle?deep=${deep}`, { method: 'POST' }),
+  runOrders: () =>
+    request<EngineStatus['last_orders']>('/orders/run', { method: 'POST' }),
   kill: () => request<EngineStatus>('/engine/kill', { method: 'POST' }),
   resetBreaker: () => request<EngineStatus>('/engine/reset-breaker', { method: 'POST' }),
 

@@ -178,6 +178,17 @@ class CollectionOffer:
 
 
 @dataclass(slots=True)
+class MarketOrder:
+    """Наша заявка на покупку, стоящая в очереди у площадки."""
+
+    market: Market
+    order_id: str
+    collection: str
+    price_ton: float
+    amount: int = 1
+
+
+@dataclass(slots=True)
 class Balance:
     market: Market
     ton: float

@@ -68,10 +68,10 @@ export default function AutoTrade() {
       <div className="card mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-slate-200">
+            <div className="text-sm font-medium text-neutral-200">
               Автоматическая торговля {data.auto_trade ? 'включена' : 'выключена'}
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-neutral-500">
               {data.paper_mode
                 ? 'Недоступна в paper-режиме: сначала выключите симуляцию в Настройках.'
                 : whitelistItems.length === 0
@@ -92,10 +92,10 @@ export default function AutoTrade() {
       <div className="card mb-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-slate-200">
+            <div className="text-sm font-medium text-neutral-200">
               Быстрая петля {data.watch_enabled ? 'включена' : 'выключена'}
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-neutral-500">
               Плановый цикл идёт раз в 20 минут — недооценённый лот столько не живёт.
               Быстрая петля берёт ленту свежих лотов одним запросом раз в{' '}
               {data.watch_interval_sec.toFixed(0)} с и оценивает только новые.
@@ -104,7 +104,7 @@ export default function AutoTrade() {
           </div>
           <div className="flex items-center gap-2">
             <select
-              className="rounded-lg bg-ink-700 px-3 py-2 text-sm text-slate-200"
+              className="rounded-lg bg-ink-700 px-3 py-2 text-sm text-neutral-200"
               value={data.watch_interval_sec}
               onChange={(event) =>
                 void patch({ watch_interval_sec: Number(event.target.value) })
@@ -151,7 +151,7 @@ export default function AutoTrade() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card">
-          <h2 className="mb-4 text-sm font-medium text-slate-300">Лимиты</h2>
+          <h2 className="mb-4 text-sm font-medium text-neutral-300">Лимиты</h2>
           <div className="space-y-3">
             <NumberField
               label="Дневной бюджет, TON"
@@ -189,10 +189,10 @@ export default function AutoTrade() {
         </div>
 
         <div className="card">
-          <h2 className="mb-2 text-sm font-medium text-slate-300">
+          <h2 className="mb-2 text-sm font-medium text-neutral-300">
             Whitelist коллекций
           </h2>
-          <p className="mb-3 text-xs text-slate-500">
+          <p className="mb-3 text-xs text-neutral-500">
             По одной в строке. Пустой список означает запрет автоматической торговли,
             а не разрешение торговать всем подряд.
           </p>
@@ -200,7 +200,7 @@ export default function AutoTrade() {
             value={whitelist}
             onChange={(event) => setWhitelist(event.target.value)}
             rows={10}
-            className="w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-slate-200"
+            className="w-full rounded-lg border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-neutral-200"
             placeholder="Plush Pepe&#10;Durov's Cap"
           />
           <div className="mt-3">
@@ -217,8 +217,8 @@ export default function AutoTrade() {
       </div>
 
       <div className="card mt-4">
-        <h2 className="mb-2 text-sm font-medium text-slate-300">Порог безубытка</h2>
-        <p className="text-sm text-slate-400">
+        <h2 className="mb-2 text-sm font-medium text-neutral-300">Порог безубытка</h2>
+        <p className="text-sm text-neutral-400">
           При текущей комиссии сделка выходит в ноль только при наценке{' '}
           <span className="font-mono text-warn">{percent(data.breakeven_markup)}</span>. Всё,
           что ниже, — убыток независимо от того, как выглядит спред.
@@ -242,12 +242,12 @@ function NumberField({
 
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-slate-400">{label}</span>
+      <span className="text-sm text-neutral-400">{label}</span>
       <div className="flex gap-2">
         <input
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          className="w-24 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-sm text-slate-200"
+          className="w-24 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-sm text-neutral-200"
         />
         <Button
           disabled={draft === String(value) || Number.isNaN(Number(draft))}

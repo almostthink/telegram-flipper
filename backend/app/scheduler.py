@@ -33,6 +33,18 @@ CLEANUP_HOURS = 24
 _scheduler: AsyncIOScheduler | None = None
 
 
+async def _orders() -> None:
+    engine = get_engine()
+    if not engine.settings.orders.enabled:
+        return
+    report = await engine.run_orders()
+    if report.placed or report.cancelled or report.errors:
+        log.info(
+            "Ордер-движок: рассмотрено %d, поставлено %d, снято %d",
+            report.considered, report.placed, report.cancelled,
+        )
+
+
 async def _watch() -> None:
     engine = get_engine()
     if not engine.settings.watch_enabled:
@@ -66,6 +78,14 @@ def start() -> AsyncIOScheduler:
         return _scheduler
 
     scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(
+        _orders,
+        IntervalTrigger(seconds=get_engine().settings.orders.interval_sec),
+        id="orders",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=15,
+    )
     scheduler.add_job(
         _watch,
         IntervalTrigger(seconds=get_engine().settings.watch_interval_sec),
@@ -112,19 +132,28 @@ def start() -> AsyncIOScheduler:
     return scheduler
 
 
+def reschedule_orders(seconds: float) -> None:
+    """Меняем период ордер-движка на лету."""
+    _reschedule("orders", seconds)
+
+
 def reschedule_watch(seconds: float) -> None:
     """Меняем период быстрой петли на лету.
 
     Без этого настройка в интерфейсе сохранялась бы в конфиг и молча не
     действовала до перезапуска — худший вид неработающей ручки.
     """
+    _reschedule("watch", seconds)
+
+
+def _reschedule(job_id: str, seconds: float) -> None:
     if _scheduler is None:
         return
-    job = _scheduler.get_job("watch")
+    job = _scheduler.get_job(job_id)
     if job is None:
         return
     job.reschedule(trigger=IntervalTrigger(seconds=seconds))
-    log.info("Быстрая петля: период изменён на %.0fс", seconds)
+    log.info("Задача %s: период изменён на %.0fс", job_id, seconds)
 
 
 def shutdown() -> None:
