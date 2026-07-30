@@ -111,6 +111,9 @@ class HarImportResult:
     #: Эндпоинты найдены только после отключения фильтра по домену:
     #: адрес API площадки не содержит её имени, стоит проверить глазами.
     matched_by_fallback: bool = False
+    #: Хосты, чьи находки отброшены как посторонние. Показываем их, чтобы
+    #: было видно, что именно не попало в конфиг и почему.
+    rejected_hosts: set[str] = field(default_factory=set)
 
     def to_endpoints(self, fallback: MarketEndpoints) -> MarketEndpoints:
         """Накладываем найденное поверх текущей конфигурации."""
@@ -283,16 +286,23 @@ def _scan_entries(entries: list, *, host_filter: str | None) -> HarImportResult:
             best[endpoint] = candidate
 
     if best:
-        result.findings = sorted(best.values(), key=lambda f: f.endpoint)
         result.base_url = max(host_counts, key=lambda k: host_counts[k])
 
-        for finding in result.findings:
-            if finding.base_url != result.base_url:
+        # Находки с посторонних хостов отбрасываем, а не сохраняем с
+        # предупреждением: записанные в конфиг, они ломают рабочие адреса.
+        # Именно так в настройки Portals однажды попал config.ton.org.
+        kept: list[HarFinding] = []
+        for finding in sorted(best.values(), key=lambda f: f.endpoint):
+            if finding.base_url == result.base_url:
+                kept.append(finding)
+            else:
+                result.rejected_hosts.add(finding.base_url)
                 log.warning(
-                    "Эндпоинт %s найден на другом хосте (%s) — проверьте вручную",
+                    "Эндпоинт %s найден на постороннем хосте (%s) — пропускаю",
                     finding.endpoint,
                     finding.base_url,
                 )
+        result.findings = kept
     return result
 
 

@@ -162,3 +162,61 @@ async def test_symbol_floors_parse():
     assert floors
     assert all(item.kind is AttributeKind.SYMBOL for item in floors)
     assert all(item.floor_ton > 0 for item in floors)
+
+
+def test_host_hint_matches_the_real_domain():
+    """Подстрока фильтра обязана входить в домен площадки.
+
+    «portals» в «portal-market.com» не входит: из-за этой опечатки фильтр
+    HAR не срабатывал, включался фолбэк без фильтра, и в конфиг попадали
+    адреса посторонних сервисов.
+    """
+    from app.api.routes_auth import _host_hint
+    from app.domain import Market
+
+    for market, base in (
+        (Market.PORTALS, "https://portal-market.com"),
+        (Market.MRKT, "https://api.tgmrkt.io"),
+    ):
+        hint = _host_hint(market)
+        assert hint and hint in base, f"фильтр {hint!r} не входит в {base}"
+
+
+def test_activity_endpoint_is_configured():
+    """Без ленты сделок недоступны 65% балла ликвидности."""
+    activity = DEFAULT_ENDPOINTS.get("activity")
+    assert activity.path == "/api/market/actions/"
+
+
+async def test_activity_requests_only_trades():
+    adapter = FakePortals(
+        {"collections": FIXTURES["collections"], "activity": {"actions": []}}
+    )
+    await adapter.activity(limit=50)
+
+    _, params = next(call for call in adapter.calls if call[0] == "activity")
+    assert params["action_types"] == "buy,sell"
+
+
+async def test_activity_parses_sales():
+    adapter = FakePortals(
+        {
+            "collections": FIXTURES["collections"],
+            "activity": {
+                "actions": [
+                    {
+                        "id": "act-1",
+                        "type": "buy",
+                        "amount": "49.98",
+                        "created_at": "2026-07-29T16:20:23Z",
+                        "nft": FIXTURES["search"]["results"][0],
+                    }
+                ]
+            },
+        }
+    )
+    events = await adapter.activity(limit=50)
+
+    assert len(events) == 1
+    assert events[0].price_ton == pytest.approx(49.98)
+    assert events[0].external_id == "act-1"

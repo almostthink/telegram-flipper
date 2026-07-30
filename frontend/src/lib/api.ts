@@ -321,10 +321,15 @@ export const api = {
       base_url: string
       token_saved: boolean
       matched_by_fallback: boolean
+      rejected_hosts: string[]
       found: { endpoint: string; path: string; method: string; records_in_sample: number }[]
       skipped: number
     }>(`/endpoints/${market}/import-har`, { method: 'POST', body: form })
   },
+  resetEndpoints: (market: string) =>
+    request<{ ok: boolean; detail: string }>(`/endpoints/${market}/reset`, {
+      method: 'POST',
+    }),
 }
 
 // --- Форматирование ---------------------------------------------------------

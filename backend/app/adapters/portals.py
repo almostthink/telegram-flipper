@@ -27,6 +27,8 @@ import logging
 from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace
 from app.adapters.parsing import as_list, pick, to_datetime, to_ton
 from app.domain import (
+    ActivityEvent,
+    ActivityKind,
     Attribute,
     AttributeFloor,
     AttributeKind,
@@ -45,6 +47,8 @@ DEFAULT_ENDPOINTS = MarketEndpoints(
         "collections": EndpointSpec("/api/collections", json_path="collections"),
         "search": EndpointSpec("/api/nfts/search", json_path="results"),
         "symbols": EndpointSpec("/api/collections/filters/symbols"),
+        # Лента покупок и продаж — источник истории для оценки ликвидности.
+        "activity": EndpointSpec("/api/market/actions/", json_path="actions"),
         # --- не подтверждено: в записи этих срезов не было ---
         # Предположение по симметрии с filters/symbols.
         "models": EndpointSpec("/api/collections/filters/models"),
@@ -190,6 +194,59 @@ class PortalsAdapter(Marketplace):
             )
         return listings
 
+    async def activity(
+        self, collection: str | None = None, *, limit: int = 100
+    ) -> list[ActivityEvent]:
+        """Лента покупок и продаж — источник истории для оценки ликвидности.
+
+        Путь подтверждён пользователем, схема ответа — нет, поэтому разбор
+        построен на списках вероятных имён полей. Без этой ленты скорость
+        продаж и время до продажи взять неоткуда, а это 65% балла
+        ликвидности.
+        """
+        params: dict[str, object] = {
+            "offset": 0,
+            "limit": min(limit, 100),
+            "action_types": "buy,sell",
+        }
+        if collection:
+            collection_id = await self.collection_id(collection)
+            if collection_id:
+                params["collection_ids"] = collection_id
+
+        payload = await self.request("activity", params=params)
+        events: list[ActivityEvent] = []
+
+        for raw in as_list(payload):
+            price = to_ton(pick(raw, "amount", "price", "sale_price"))
+            happened = to_datetime(
+                pick(raw, "created_at", "createdAt", "date", "timestamp")
+            )
+            if price is None or happened is None:
+                continue
+
+            nested = raw.get("nft") if isinstance(raw.get("nft"), dict) else raw
+            gift = parse_portals_gift(nested, fallback_collection=collection or "")
+            if collection:
+                gift.collection = collection
+
+            action = str(pick(raw, "type", "action_type", "action", default="")).lower()
+            events.append(
+                ActivityEvent(
+                    market=self.name,
+                    # Лента запрошена только по покупкам и продажам, поэтому
+                    # незнакомый тип трактуем как сделку, а не как листинг.
+                    kind=ActivityKind.LISTING if "list" in action else ActivityKind.SALE,
+                    gift=gift,
+                    price_ton=price,
+                    happened_at=happened,
+                    external_id=_as_str(pick(raw, "id", "action_id")),
+                    buyer=_as_str(pick(raw, "buyer", "buyer_id", "to")),
+                    seller=_as_str(pick(raw, "seller", "seller_id", "from")),
+                )
+            )
+        return events
+
     async def attribute_floors(self, collection: str) -> list[AttributeFloor]:
         """Флоры по срезам атрибутов.
 
@@ -240,3 +297,11 @@ def _as_float(value: object) -> float | None:
         return float(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
+
+
+def _as_str(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return _as_str(pick(value, "id", "name", "address"))
+    return str(value)

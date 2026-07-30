@@ -602,7 +602,21 @@ function HarCard({
         <Button variant="primary" onClick={() => fileRef.current?.click()}>
           Выбрать HAR-файл
         </Button>
+        <Button
+          onClick={() =>
+            void api
+              .resetEndpoints(market)
+              .then((r) => onReport('info', r.detail))
+              .catch((e: Error) => onReport('error', e.message))
+          }
+        >
+          Сбросить адреса
+        </Button>
       </div>
+      <p className="mt-2 text-xs text-slate-500">
+        Сброс возвращает адреса площадки к значениям по умолчанию — на случай,
+        если импорт записал не то.
+      </p>
 
       {result && (
         <div className="mt-4 space-y-1 rounded-lg bg-ink-700 p-3 text-xs">
@@ -613,6 +627,12 @@ function HarCard({
                 {result.base_url}. Проверьте, что это действительно её API, а не
                 сторонний сервис.
               </Alert>
+            </div>
+          )}
+          {result.rejected_hosts.length > 0 && (
+            <div className="mb-2 text-slate-500">
+              Пропущены находки с посторонних доменов:{' '}
+              {result.rejected_hosts.join(', ')}
             </div>
           )}
           <div className="mb-2 text-slate-400">Базовый адрес: {result.base_url}</div>

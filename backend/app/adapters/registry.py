@@ -88,6 +88,31 @@ def save_override(market: Market, endpoints: MarketEndpoints) -> None:
     log.info("Эндпоинты %s сохранены в %s", market.value, path)
 
 
+def reset_override(market: Market) -> bool:
+    """Убираем пользовательские правки путей, возвращая значения по умолчанию.
+
+    Нужно, когда импорт HAR записал в конфиг что-то не то: без сброса
+    испорченные адреса переживают перезапуск и чинятся только правкой
+    файла руками.
+    """
+    path = _overrides_path()
+    if not path.exists():
+        return False
+
+    try:
+        existing = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        path.unlink(missing_ok=True)
+        return True
+
+    if existing.pop(market.value, None) is None:
+        return False
+
+    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    log.info("Правки эндпоинтов %s сброшены к значениям по умолчанию", market.value)
+    return True
+
+
 def endpoints_for(market: Market) -> MarketEndpoints:
     """Пути по умолчанию, поверх которых наложены пользовательские правки."""
     overrides = load_overrides().get(market)

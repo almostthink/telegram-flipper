@@ -155,3 +155,36 @@ def test_filter_still_wins_when_it_matches():
 
     assert result.matched_by_fallback is False
     assert result.base_url == "https://api.mrkt.xyz"
+
+
+def test_correct_filter_never_sees_foreign_hosts():
+    """При верном фильтре посторонние домены до разбора вообще не доходят."""
+    document = har(
+        entry("https://portal-market.com/api/collections", body={"collections": [{"a": 1}]}),
+        entry("https://config.ton.org/wallets-v2.json", body={"balance": [{"c": 3}]}),
+    )
+    result = parse_har(document, host_filter="portal-market")
+
+    assert result.base_url == "https://portal-market.com"
+    assert result.matched_by_fallback is False
+    assert "balance" not in {item.endpoint for item in result.findings}
+
+
+def test_rejected_hosts_are_reported_on_fallback():
+    """Отбраковка важна именно на пути фолбэка — там она и понадобилась.
+
+    При промахе фильтра разбор идёт по всем доменам сразу, и без отбраковки
+    служебный файл чужого сервиса объявляется эндпоинтом баланса.
+    """
+    document = har(
+        entry("https://portal-market.com/api/collections", body={"collections": [{"a": 1}]}),
+        entry("https://portal-market.com/api/nfts/search", body={"results": [{"b": 2}]}),
+        entry("https://config.ton.org/wallets.json", body={"balance": [{"c": 3}]}),
+    )
+    # Промахнувшийся фильтр — ровно та опечатка, что была в коде.
+    result = parse_har(document, host_filter="portals")
+
+    assert result.matched_by_fallback is True
+    assert result.base_url == "https://portal-market.com"
+    assert "https://config.ton.org" in result.rejected_hosts
+    assert "balance" not in {item.endpoint for item in result.findings}

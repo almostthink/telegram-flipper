@@ -121,6 +121,25 @@ async def refresh_token(market_name: str) -> dict:
     return {"ok": True, "detail": f"Токен {market.value} обновлён"}
 
 
+@router.post("/endpoints/{market_name}/reset")
+async def reset_endpoints(market_name: str) -> dict:
+    """Сброс адресов площадки к значениям по умолчанию."""
+    try:
+        market = Market(market_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Неизвестная площадка") from exc
+
+    changed = registry.reset_override(market)
+    return {
+        "ok": True,
+        "detail": (
+            f"Адреса {market.value} возвращены к значениям по умолчанию"
+            if changed
+            else f"У {market.value} не было пользовательских правок"
+        ),
+    }
+
+
 @router.get("/endpoints")
 async def list_endpoints() -> dict:
     """Текущие адреса API площадок — с учётом пользовательских правок."""
@@ -176,6 +195,9 @@ async def import_har(market_name: str, file: UploadFile = File(...)) -> dict:
         # Фильтр по имени площадки не сработал, адреса взяты с другого
         # домена — стоит убедиться глазами, что это действительно её API.
         "matched_by_fallback": result.matched_by_fallback,
+        # Хосты, чьи находки отброшены как посторонние — чтобы было видно,
+        # что именно не попало в конфиг.
+        "rejected_hosts": sorted(result.rejected_hosts),
         "found": [
             {
                 "endpoint": item.endpoint,
@@ -191,8 +213,15 @@ async def import_har(market_name: str, file: UploadFile = File(...)) -> dict:
 
 
 def _host_hint(market: Market) -> str | None:
+    """Подстрока домена площадки для фильтра HAR.
+
+    Осторожно с именами: домен Portals — portal-market.com, и подстрока
+    «portals» в него не входит. Ошибка здесь не безобидна: фильтр не
+    срабатывает, включается фолбэк без фильтра, и в конфиг попадают
+    адреса посторонних сервисов.
+    """
     return {
-        Market.PORTALS: "portals",
-        Market.MRKT: "mrkt",
+        Market.PORTALS: "portal-market",
+        Market.MRKT: "tgmrkt",
         Market.GETGEMS: "getgems",
     }.get(market)
