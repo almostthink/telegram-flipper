@@ -323,11 +323,33 @@ async def record_floors(
     return len(floors)
 
 
+#: Насколько флор атрибута должен измениться, чтобы считаться новостью.
+#: Доли процента — это округление, а не движение рынка.
+ATTRIBUTE_CHANGE_EPS = 0.005
+
+
 async def record_attribute_floors(session: AsyncSession, floors: list[AttributeFloor]) -> int:
+    """Пишем флоры атрибутов, пропуская неизменившиеся.
+
+    Площадка отдаёт весь каталог атрибутов на каждую коллекцию — восемь
+    сотен строк, из которых между проходами меняются единицы. Писать все
+    подряд означало десятки тысяч строк за цикл и полтора миллиона за
+    сутки: база растёт, а нового в ней ничего нет.
+    """
     if not floors:
         return 0
-    session.add_all(
-        [
+
+    previous = await _latest_attribute_floors(session, floors)
+
+    rows = []
+    for item in floors:
+        key = (item.market.value, item.collection, item.kind.value, item.name)
+        before = previous.get(key)
+        if before is not None and abs(before - item.floor_ton) <= ATTRIBUTE_CHANGE_EPS * max(
+            before, item.floor_ton
+        ):
+            continue
+        rows.append(
             AttributeFloorSnapshot(
                 market=item.market.value,
                 collection=item.collection,
@@ -337,10 +359,40 @@ async def record_attribute_floors(session: AsyncSession, floors: list[AttributeF
                 rarity_permille=item.rarity_permille,
                 captured_at=item.captured_at,
             )
-            for item in floors
-        ]
+        )
+
+    session.add_all(rows)
+    return len(rows)
+
+
+async def _latest_attribute_floors(
+    session: AsyncSession, floors: list[AttributeFloor]
+) -> dict[tuple[str, str, str, str], float]:
+    """Последнее записанное значение по каждому атрибуту затронутых коллекций."""
+    collections = {item.collection for item in floors}
+    markets = {item.market.value for item in floors}
+
+    query = (
+        select(
+            AttributeFloorSnapshot.market,
+            AttributeFloorSnapshot.collection,
+            AttributeFloorSnapshot.kind,
+            AttributeFloorSnapshot.name,
+            AttributeFloorSnapshot.floor_ton,
+        )
+        .where(
+            AttributeFloorSnapshot.market.in_(markets),
+            AttributeFloorSnapshot.collection.in_(collections),
+            AttributeFloorSnapshot.captured_at >= utcnow() - timedelta(days=2),
+        )
+        .order_by(AttributeFloorSnapshot.captured_at)
     )
-    return len(floors)
+
+    # Идём по возрастанию времени: последнее присвоение и есть свежее.
+    latest: dict[tuple[str, str, str, str], float] = {}
+    for market, collection, kind, name, floor in (await session.execute(query)).all():
+        latest[(market, collection, kind, name)] = floor
+    return latest
 
 
 # --- Выборки для аналитики ----------------------------------------------
@@ -454,21 +506,32 @@ async def floor_at(session: AsyncSession, collection: str, hours_ago: float) -> 
 async def attribute_floor_map(
     session: AsyncSession, collection: str
 ) -> dict[tuple[str, str], float]:
-    """Свежие флоры атрибутов: (kind, name) → floor_ton."""
-    cutoff = utcnow() - timedelta(hours=6)
+    """Последние известные флоры атрибутов: (kind, name) → floor_ton.
+
+    Окно широкое намеренно. Неизменившиеся значения повторно не пишутся,
+    поэтому «свежесть» записи больше не говорит о свежести цены: атрибут,
+    чей флор стоит на месте неделю, при узком окне просто исчезал бы из
+    выдачи, и оценка теряла бы множитель.
+    """
+    cutoff = utcnow() - timedelta(days=7)
     query = (
         select(
             AttributeFloorSnapshot.kind,
             AttributeFloorSnapshot.name,
-            func.min(AttributeFloorSnapshot.floor_ton),
+            AttributeFloorSnapshot.floor_ton,
         )
         .where(
             AttributeFloorSnapshot.collection == collection,
             AttributeFloorSnapshot.captured_at >= cutoff,
         )
-        .group_by(AttributeFloorSnapshot.kind, AttributeFloorSnapshot.name)
+        .order_by(AttributeFloorSnapshot.captured_at)
     )
-    return {(kind, name): floor for kind, name, floor in (await session.execute(query)).all()}
+
+    # По возрастанию времени: последнее присвоение и есть актуальное.
+    result: dict[tuple[str, str], float] = {}
+    for kind, name, floor in (await session.execute(query)).all():
+        result[(kind, name)] = floor
+    return result
 
 
 async def active_listings(

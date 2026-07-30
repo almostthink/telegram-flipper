@@ -196,6 +196,10 @@ class MrktAdapter(Marketplace):
     name = Market.MRKT
     supports_trading = True
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._collections_cache: list[dict] | None = None
+
     async def exchange_init_data(self, init_data: str, *, photo: str = "") -> str:
         """Меняем initData Telegram на собственный токен площадки.
 
@@ -215,12 +219,22 @@ class MrktAdapter(Marketplace):
             raise MarketplaceError("MRKT не вернул токен в ответе на авторизацию")
         return str(token)
 
+    async def _collections(self) -> list[dict]:
+        """Список коллекций, один запрос на жизнь адаптера.
+
+        Текущий и вчерашний флоры лежат в одном ответе, и спрашивать его
+        дважды за проход — это лишний запрос в счёт лимита частоты.
+        Адаптер создаётся заново на каждый проход, так что кэш не залежится.
+        """
+        if self._collections_cache is None:
+            self._collections_cache = as_list(await self.request("collections"))
+        return self._collections_cache
+
     async def collection_floors(self) -> list[CollectionFloor]:
         """Флоры коллекций. Подтверждено: массив в корне ответа."""
-        payload = await self.request("collections")
         floors: list[CollectionFloor] = []
 
-        for raw in as_list(payload):
+        for raw in await self._collections():
             name = pick(raw, "name", "title")
             floor = nano_to_ton(pick(raw, "floorPriceNanoTons"))
             if not name or floor is None:
@@ -242,9 +256,8 @@ class MrktAdapter(Marketplace):
         Готовый тренд без накопления собственной истории: полезно на
         первом запуске, когда своих замеров ещё нет.
         """
-        payload = await self.request("collections")
         result: dict[str, float] = {}
-        for raw in as_list(payload):
+        for raw in await self._collections():
             name = pick(raw, "name", "title")
             previous = nano_to_ton(pick(raw, "previousDayFloorPriceNanoTons"))
             if name and previous is not None:

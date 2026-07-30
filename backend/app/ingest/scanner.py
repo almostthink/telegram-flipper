@@ -32,7 +32,19 @@ log = logging.getLogger(__name__)
 #: Сколько коллекций обходить глубоко за один проход.
 DEEP_SCAN_COLLECTIONS = 25
 #: Максимум листингов на коллекцию — дальше цены уже не флип-зона.
-LISTINGS_PER_COLLECTION = 100
+#: Страница отдаёт 20, так что это ровно два запроса. Брать глубже
+#: бессмысленно: покупаем мы у флора, а дорогой хвост книги на решение
+#: не влияет — только на счёт запросов.
+LISTINGS_PER_COLLECTION = 40
+
+#: Сколько событий ленты забирать за проход. Лента общая на весь рынок,
+#: поэтому одного обхода хватает на все отслеживаемые коллекции сразу.
+ACTIVITY_PER_SCAN = 200
+
+#: Раз во сколько циклов обновлять флоры атрибутов одной коллекции.
+#: Они меняются медленно, а стоят три запроса на коллекцию — на два
+#: десятка коллекций это больше половины всего прохода.
+ATTRIBUTE_SCAN_EVERY = 4
 
 #: Сколько свежих лотов забирать за один тик быстрой петли. Столько же
 #: отдаёт страница ленты, и при тике в десяток секунд этого хватает с
@@ -98,6 +110,8 @@ class Scanner:
         self.settings = settings
         self.last_stats = ScanStats()
         self._health: dict[Market, MarketHealth] = {}
+        #: Какая часть коллекций обновляет флоры атрибутов в этом проходе.
+        self._attribute_turn = 0
 
     # --- Широкая петля ---------------------------------------------------
 
@@ -233,14 +247,20 @@ class Scanner:
                 continue
             try:
                 async with adapter:
-                    for collection in collections:
-                        stats.merge(await self._scan_one(adapter, collection))
+                    # Лента общая на весь рынок, и каждое событие несёт свою
+                    # коллекцию. Спрашивать её по коллекции отдельно — это
+                    # два десятка одинаковых запросов вместо одного, и
+                    # именно они упирали проход в лимит частоты.
+                    stats.merge(await self._scan_activity(adapter))
+                    for index, collection in enumerate(collections):
+                        stats.merge(await self._scan_one(adapter, collection, index))
                 self._note_success(market)
             except AuthExpired as exc:
                 await self._handle_auth_expired(market, exc, stats)
             except MarketplaceError as exc:
                 self._note_failure(market, str(exc), stats)
 
+        self._attribute_turn += 1
         self.last_stats = stats
         log.info(
             "Скан: листингов %d, продаж %d, событий ленты %d, флоров атрибутов %d, "
@@ -250,7 +270,21 @@ class Scanner:
         )
         return stats
 
-    async def _scan_one(self, adapter: Marketplace, collection: str) -> ScanStats:
+    async def _scan_activity(self, adapter: Marketplace) -> ScanStats:
+        """Общая лента событий рынка — один обход на весь проход."""
+        stats = ScanStats()
+        try:
+            events = await adapter.activity(limit=ACTIVITY_PER_SCAN)
+        except MarketplaceError as exc:
+            log.debug("%s: лента недоступна — %s", adapter.name.value, exc)
+            return stats
+
+        await self._save_activity(events, stats)
+        return stats
+
+    async def _scan_one(
+        self, adapter: Marketplace, collection: str, index: int = 0
+    ) -> ScanStats:
         """Один проход по коллекции на одной площадке."""
         stats = ScanStats()
 
@@ -271,16 +305,16 @@ class Scanner:
                 )
                 stats.vanished += len(vanished)
 
-        for coroutine, handler in (
-            (adapter.activity(collection, limit=100), self._save_activity),
-            (adapter.attribute_floors(collection), self._save_attribute_floors),
-        ):
+        # Флоры атрибутов меняются медленно, а стоят три запроса на
+        # коллекцию — на два десятка коллекций это больше половины всего
+        # прохода. Обходим их по очереди, часть коллекций за цикл.
+        if index % ATTRIBUTE_SCAN_EVERY == self._attribute_turn % ATTRIBUTE_SCAN_EVERY:
             try:
-                payload = await coroutine
+                floors = await adapter.attribute_floors(collection)
             except MarketplaceError as exc:
                 log.debug("%s/%s: %s", adapter.name.value, collection, exc)
-                continue
-            await handler(payload, stats)
+            else:
+                await self._save_attribute_floors(floors, stats)
 
         async with session_scope() as session:
             stats.tts_recovered += await repo.attach_tts(

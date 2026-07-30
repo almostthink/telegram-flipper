@@ -93,16 +93,34 @@ def dig(payload: Any, json_path: str) -> Any:
     return current
 
 
+#: Во сколько раз замедляемся после отказа по частоте.
+SLOWDOWN_FACTOR = 1.6
+#: Потолок паузы. Дальше замедляться бессмысленно: проход всё равно
+#: не уложится в свой период, а данные устареют.
+MAX_INTERVAL_SEC = 10.0
+#: Сколько удачных запросов подряд нужно, чтобы ускориться на шаг назад.
+RELAX_AFTER_OK = 20
+
+
 class RateLimiter:
-    """Минимальная пауза между запросами плюс джиттер.
+    """Пауза между запросами: базовая, плюс джиттер, плюс адаптация.
 
     Ровный интервал запросов выглядит как бот. Джиттер и случайная задержка
     делают трафик менее машинным, а заодно разводят параллельные адаптеры.
+
+    Фиксированной паузы недостаточно. Сколько запросов в минуту площадка
+    терпит — не документировано и меняется, а упереться в её лимит хуже,
+    чем идти медленнее: три повтора подряд получают тот же отказ, запрос
+    признаётся неудачным, и целый источник данных пропадает из прохода.
+    Поэтому на 429 пауза растёт и держится, а возвращается к базовой лишь
+    после череды удачных запросов.
     """
 
     def __init__(self, min_interval_sec: float) -> None:
+        self.base_interval = min_interval_sec
         self.min_interval = min_interval_sec
         self._last = 0.0
+        self._ok_streak = 0
         self._lock = asyncio.Lock()
 
     async def wait(self) -> None:
@@ -114,6 +132,26 @@ class RateLimiter:
             if delay + jitter > 0:
                 await asyncio.sleep(max(delay, 0) + jitter)
             self._last = loop.time()
+
+    def penalize(self) -> None:
+        """Площадка попросила притормозить — тормозим до следующего разгона."""
+        self._ok_streak = 0
+        slowed = min(max(self.min_interval, self.base_interval) * SLOWDOWN_FACTOR,
+                     MAX_INTERVAL_SEC)
+        if slowed > self.min_interval:
+            self.min_interval = slowed
+            log.info("Пауза между запросами увеличена до %.1fс", self.min_interval)
+
+    def relax(self) -> None:
+        """Череда удачных запросов — можно осторожно ускориться."""
+        if self.min_interval <= self.base_interval:
+            return
+        self._ok_streak += 1
+        if self._ok_streak < RELAX_AFTER_OK:
+            return
+        self._ok_streak = 0
+        self.min_interval = max(self.base_interval, self.min_interval / SLOWDOWN_FACTOR)
+        log.info("Пауза между запросами снижена до %.1fс", self.min_interval)
 
 
 class AuthPlacement(StrEnum):
@@ -145,12 +183,16 @@ class Marketplace(ABC):
         fee_buy: float = 0.0,
         request_delay_sec: float = 1.0,
         auth_header: str | None = None,
+        limiter: RateLimiter | None = None,
     ) -> None:
         self.endpoints = endpoints
         self.fee_sell = fee_sell
         self.fee_buy = fee_buy
         self.auth_header = auth_header
-        self._limiter = RateLimiter(request_delay_sec)
+        # Лимит частоты — свойство аккаунта, а не объекта. Адаптеры
+        # создаются заново на каждый проход, и собственный счётчик у
+        # каждого означал бы, что выученное замедление тут же забывается.
+        self._limiter = limiter or RateLimiter(request_delay_sec)
         self._client: httpx.AsyncClient | None = None
         self.last_error: str | None = None
 
@@ -241,6 +283,9 @@ class Marketplace(ABC):
                 raise AuthExpired(f"{self.name}: токен недействителен ({response.status_code})")
 
             if response.status_code == 429:
+                # Замедляемся не только сейчас, но и на будущие запросы:
+                # иначе следующий проход упрётся в тот же лимит.
+                self._limiter.penalize()
                 # Уважаем Retry-After, если площадка его прислала.
                 pause = float(response.headers.get("Retry-After", 2**attempt))
                 log.warning("%s: rate limit, пауза %.1fс", self.name, pause)
@@ -260,6 +305,7 @@ class Marketplace(ABC):
                 )
 
             self.last_error = None
+            self._limiter.relax()
             try:
                 payload = response.json()
             except ValueError as exc:

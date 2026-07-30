@@ -11,7 +11,7 @@ import logging
 
 from app import paths
 from app.adapters import mrkt, portals, reference
-from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace
+from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace, RateLimiter
 from app.auth.tma import auth
 from app.config import Settings
 from app.domain import Market
@@ -124,15 +124,32 @@ def endpoints_for(market: Market) -> MarketEndpoints:
     return MarketEndpoints(base_url=overrides.base_url or base.base_url, endpoints=merged)
 
 
+#: Ограничители частоты живут дольше адаптеров. Площадка считает запросы
+#: по аккаунту, а адаптеры создаются заново на каждый проход: собственный
+#: счётчик у каждого означал бы, что выученное замедление сразу забыто и
+#: следующий проход снова упирается в тот же лимит.
+_LIMITERS: dict[Market, RateLimiter] = {}
+
+
+def limiter_for(market: Market, base_interval_sec: float) -> RateLimiter:
+    limiter = _LIMITERS.get(market)
+    if limiter is None or limiter.base_interval != base_interval_sec:
+        limiter = RateLimiter(base_interval_sec)
+        _LIMITERS[market] = limiter
+    return limiter
+
+
 def build_adapter(market: Market, settings: Settings) -> Marketplace:
     cfg = settings.marketplaces.get(market.value)
     adapter_cls = ADAPTER_CLASSES[market]
+    delay = cfg.request_delay_sec if cfg else 1.0
     adapter = adapter_cls(
         endpoints=endpoints_for(market),
         fee_sell=cfg.fee_sell if cfg else 0.05,
         fee_buy=cfg.fee_buy if cfg else 0.0,
-        request_delay_sec=cfg.request_delay_sec if cfg else 1.0,
+        request_delay_sec=delay,
         auth_header=auth.get(market),
+        limiter=limiter_for(market, delay),
     )
     return adapter
 
