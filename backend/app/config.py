@@ -233,11 +233,18 @@ class Settings(BaseSettings):
         )
 
 
-def _drop_unknown_marketplaces(stored: dict) -> dict:
-    """Выкидываем площадки, которых больше нет в приложении.
+def _reconcile_marketplaces(stored: dict) -> dict:
+    """Сверяем сохранённый список площадок с тем, что есть в приложении.
 
-    Сохранённый конфиг переживает обновления, и без этой чистки закрытый
-    Tonnel продолжал бы висеть в интерфейсе после его удаления из кода.
+    Конфиг переживает обновления, и расходится он в обе стороны. Убранная
+    площадка иначе висела бы в интерфейсе, а добавленная — не появилась бы
+    никогда: сохранённый словарь замещает значения по умолчанию целиком,
+    а не дополняется ими. Именно так пропал Tonnel у тех, кто ставил
+    сборку, где его ещё не было: в настройках не оказалось ни его самого,
+    ни возможности его включить.
+
+    Настройки уже существующих площадок при этом не трогаем — они правлены
+    пользователем, и сбрасывать их к умолчаниям нельзя.
     """
     markets = stored.get("marketplaces")
     if not isinstance(markets, dict):
@@ -246,9 +253,13 @@ def _drop_unknown_marketplaces(stored: dict) -> dict:
     from app.domain import Market
 
     known = {market.value for market in Market}
-    unknown = set(markets) - known
-    if unknown:
-        stored = {**stored, "marketplaces": {k: v for k, v in markets.items() if k in known}}
+    defaults = Settings.model_fields["marketplaces"].default_factory()
+    merged = {name: item for name, item in markets.items() if name in known}
+    for name, default in defaults.items():
+        merged.setdefault(name, default.model_dump())
+
+    if merged != markets:
+        stored = {**stored, "marketplaces": merged}
     return stored
 
 
@@ -258,7 +269,7 @@ def load_settings() -> Settings:
     if path.exists():
         try:
             stored = json.loads(path.read_text(encoding="utf-8"))
-            return Settings(**_drop_unknown_marketplaces(stored))
+            return Settings(**_reconcile_marketplaces(stored))
         except (json.JSONDecodeError, ValueError):
             # Битый конфиг не должен мешать запуску — откатываемся на дефолты.
             backup = path.with_suffix(".json.broken")

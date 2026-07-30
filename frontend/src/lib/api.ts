@@ -13,6 +13,7 @@ export interface Health {
 }
 
 export interface MarketplaceStatus {
+  label: string
   enabled: boolean
   trade_enabled: boolean
   connected: boolean
@@ -228,11 +229,17 @@ export interface BacktestResult {
   }[]
 }
 
+export interface MarketAuth {
+  label: string
+  tradable: boolean
+  configured: boolean
+  source: string | null
+  age_hours: number | null
+  stale: boolean
+}
+
 export interface AuthStatus {
-  markets: Record<
-    string,
-    { configured: boolean; source: string | null; age_hours: number | null; stale: boolean }
-  >
+  markets: Record<string, MarketAuth>
   vault_backend: string
   vault_secure: boolean
   userbot_available: boolean

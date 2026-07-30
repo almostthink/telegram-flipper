@@ -3,17 +3,34 @@ import { api, type AuthStatus } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { Alert, Button, Page } from '../components/ui'
 
-// Торговля ведётся только на MRKT — её схема подтверждена записью трафика.
-// Остальные подключены как источник цен для кросс-маркет сверки.
-const MARKETS = [
-  { key: 'mrkt', label: 'MRKT', tradable: true },
-  { key: 'portals', label: 'Portals', tradable: false },
-  { key: 'getgems', label: 'GetGems', tradable: false },
-]
+interface MarketRow {
+  key: string
+  label: string
+  tradable: boolean
+}
+
+/** Список площадок берём у бэкенда, а не пишем руками.
+ *
+ * Рукописный список уже разошёлся с действительностью: Tonnel работал,
+ * а в настройках его не было — ни токен вставить, ни выключить.
+ */
+function marketRows(auth: AuthStatus | null, configKeys: string[]): MarketRow[] {
+  const known = Object.entries(auth?.markets ?? {})
+  if (known.length > 0) {
+    return known.map(([key, state]) => ({
+      key,
+      label: state.label,
+      tradable: state.tradable,
+    }))
+  }
+  // Ответ /auth ещё не пришёл — показываем хотя бы то, что есть в конфиге.
+  return configKeys.map((key) => ({ key, label: key, tradable: false }))
+}
 
 export default function Settings() {
   const auth = useApi(() => api.auth())
   const config = useApi(() => api.config())
+  const markets = marketRows(auth.data, Object.keys(config.data?.marketplaces ?? {}))
   const [message, setMessage] = useState<{ tone: 'info' | 'error' | 'warn'; text: string } | null>(
     null,
   )
@@ -77,11 +94,11 @@ export default function Settings() {
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <TokensCard auth={auth} onReport={report} />
+        <TokensCard auth={auth} markets={markets} onReport={report} />
         <UserbotCard auth={auth} onReport={report} />
       </div>
 
-      <HarCard onReport={report} onDone={() => void auth.reload()} />
+      <HarCard markets={markets} onReport={report} onDone={() => void auth.reload()} />
 
       {config.data && (
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -246,14 +263,17 @@ export default function Settings() {
               Указаны долей: 0.05 = 5%. Комиссия MRKT подтверждена записью
               трафика — 2%, и берётся она с покупателя сверх цены продавца.
               <br />
-              Portals и GetGems выключены: их адреса не восстановлены и на
-              практике неверны, включёнными они дают только ошибки в журнале.
-              Включайте после того, как импорт HAR подставит рабочие пути —
-              тогда заработает кросс-маркет сверка.
+              Торгуем на MRKT и Tonnel; аукцион есть только на Tonnel. У Tonnel
+              торговля пока выключена — тела торговых запросов не подтверждены
+              записью трафика, а покупать по угаданному пути нельзя. Чтение при
+              этом работает: флоры, лоты и сделки собираются.
+              <br />
+              GetGems выключен: у него GraphQL с persisted queries, хеш запроса
+              меняется с каждым обновлением их фронтенда.
             </p>
 
             <div className="mb-4 space-y-2">
-              {MARKETS.map((market) => {
+              {markets.map((market) => {
                 const cfg = config.data!.marketplaces[market.key]
                 if (!cfg) return null
                 return (
@@ -289,7 +309,7 @@ export default function Settings() {
               })}
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {MARKETS.map((market) => (
+              {markets.map((market) => (
                 <Field
                   key={market.key}
                   label={`${market.label} — комиссия продавца`}
@@ -317,12 +337,14 @@ export default function Settings() {
 
 function TokensCard({
   auth,
+  markets,
   onReport,
 }: {
   auth: ReturnType<typeof useApi<Awaited<ReturnType<typeof api.auth>>>>
+  markets: MarketRow[]
   onReport: (tone: 'info' | 'error', text: string) => void
 }) {
-  const [market, setMarket] = useState('portals')
+  const [market, setMarket] = useState('mrkt')
   const [token, setToken] = useState('')
 
   const save = async () => {
@@ -356,6 +378,15 @@ function TokensCard({
           <span className="font-mono">tma&nbsp;…</span>, то есть initData как есть.
         </li>
         <li>
+          <span className="text-neutral-300">Tonnel</span> — заголовка тоже нет:
+          площадка кладёт initData в тело запроса, полем{' '}
+          <span className="font-mono">authData</span>. Откройте любой запрос к{' '}
+          <span className="font-mono">gifts2.tonnel.network</span> → вкладка{' '}
+          <span className="font-mono">Payload</span> → скопируйте значение{' '}
+          <span className="font-mono">authData</span> (или{' '}
+          <span className="font-mono">user_auth</span> — это одно и то же).
+        </li>
+        <li>
           <span className="text-neutral-300">GetGems</span> — заголовка
           Authorization нет вовсе, сессия лежит в cookie. Скопируйте строку
           Cookie целиком (там{' '}
@@ -367,7 +398,7 @@ function TokensCard({
       <p className="mb-4 text-xs text-neutral-500">Живёт 1–7 дней.</p>
 
       <div className="mb-4 space-y-2">
-        {MARKETS.map((item) => {
+        {markets.map((item) => {
           const state = auth.data?.markets[item.key]
           return (
             <div
@@ -406,7 +437,7 @@ function TokensCard({
           onChange={(event) => setMarket(event.target.value)}
           className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-neutral-200"
         >
-          {MARKETS.map((item) => (
+          {markets.map((item) => (
             <option key={item.key} value={item.key}>
               {item.label}
             </option>
@@ -652,9 +683,11 @@ function TelegramLogin({
 }
 
 function HarCard({
+  markets,
   onReport,
   onDone,
 }: {
+  markets: MarketRow[]
   onReport: (tone: 'info' | 'error' | 'warn', text: string) => void
   onDone: () => void
 }) {
@@ -742,7 +775,7 @@ function HarCard({
           onChange={(event) => setMarket(event.target.value)}
           className="rounded-md border border-ink-500 bg-ink-900 px-3 py-2 text-sm text-neutral-200"
         >
-          {MARKETS.map((item) => (
+          {markets.map((item) => (
             <option key={item.key} value={item.key}>
               {item.label}
             </option>

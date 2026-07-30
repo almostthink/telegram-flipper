@@ -104,8 +104,10 @@ async def status() -> dict:
 
     marketplaces = {}
     for name, cfg in settings.marketplaces.items():
-        token = auth.state(Market(name)) if name in {m.value for m in Market} else None
+        known = name in {m.value for m in Market}
+        token = auth.state(Market(name)) if known else None
         marketplaces[name] = {
+            "label": Market(name).label if known else name,
             "enabled": cfg.enabled,
             "trade_enabled": cfg.trade_enabled,
             "connected": token is not None and bool(token.value) and name not in disabled,

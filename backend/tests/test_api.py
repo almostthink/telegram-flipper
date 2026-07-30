@@ -39,6 +39,28 @@ def test_only_mrkt_is_tradable(client):
     assert body["marketplaces"]["getgems"]["enabled"] is False
 
 
+def test_auth_lists_every_market_with_a_name(client):
+    """Интерфейс строит список площадок по этому ответу.
+
+    Пока список был набран в вёрстке руками, Tonnel работал в бэкенде, но
+    в настройках его просто не было — ни включить, ни вставить токен.
+    """
+    from app.domain import Market
+
+    markets = client.get(f"{API_PREFIX}/auth").json()["markets"]
+
+    assert set(markets) == {market.value for market in Market}
+    assert all(item["label"] for item in markets.values()), "площадка без имени"
+    assert markets["mrkt"]["tradable"] is True
+    assert markets["tonnel"]["tradable"] is True
+    assert markets["getgems"]["tradable"] is False
+
+
+def test_status_marketplaces_carry_names(client):
+    body = client.get(f"{API_PREFIX}/status").json()["marketplaces"]
+    assert body["tonnel"]["label"] == "Tonnel"
+
+
 def test_config_roundtrip(client):
     body = client.get(f"{API_PREFIX}/config").json()
     assert body["analytics"]["min_roi"] > 0

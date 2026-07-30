@@ -36,6 +36,10 @@ async def auth_status() -> dict:
     for market in Market:
         state = auth.state(market)
         markets[market.value] = {
+            # Название и признак торговли отдаём отсюда, чтобы интерфейс
+            # перечислял площадки по этому ответу, а не по своему списку.
+            "label": market.label,
+            "tradable": registry.ADAPTER_CLASSES[market].supports_trading,
             "configured": state is not None and bool(state.value),
             "source": state.source if state else None,
             "age_hours": round(state.age_sec / 3600, 1) if state else None,
@@ -325,5 +329,6 @@ def _host_hint(market: Market) -> str | None:
     return {
         Market.PORTALS: "portal-market",
         Market.MRKT: "tgmrkt",
+        Market.TONNEL: "tonnel",
         Market.GETGEMS: "getgems",
     }.get(market)

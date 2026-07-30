@@ -24,6 +24,24 @@ class Market(StrEnum):
     TONNEL = "tonnel"
     GETGEMS = "getgems"
 
+    @property
+    def label(self) -> str:
+        """Имя площадки для интерфейса.
+
+        Держим его здесь, а не в вёрстке: списки площадок, набранные во
+        фронтенде руками, уже один раз разошлись с реальностью — Tonnel
+        работал в бэкенде, но в настройках его просто не было видно.
+        """
+        return _LABELS[self]
+
+
+_LABELS: dict[Market, str] = {
+    Market.PORTALS: "Portals",
+    Market.MRKT: "MRKT",
+    Market.TONNEL: "Tonnel",
+    Market.GETGEMS: "GetGems",
+}
+
 
 class AttributeKind(StrEnum):
     """Три оси редкости Telegram-подарка."""

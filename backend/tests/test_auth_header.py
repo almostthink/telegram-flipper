@@ -148,3 +148,13 @@ def test_auth_cookie_detection():
 
     assert has_auth_cookie(GETGEMS_COOKIE)
     assert not has_auth_cookie("_ga=GA1.1.111; theme=dark")
+
+
+def test_tonnel_init_data_stays_bare():
+    """У Tonnel initData уходит в тело запроса — префиксу там не место."""
+    assert normalize_header(Market.TONNEL, INIT_DATA) == INIT_DATA
+
+
+def test_tonnel_strips_a_pasted_tma_prefix():
+    """Префикс копируют по привычке от Portals, а подпись с ним не сойдётся."""
+    assert normalize_header(Market.TONNEL, f"tma {INIT_DATA}") == INIT_DATA

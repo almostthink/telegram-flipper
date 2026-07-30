@@ -179,12 +179,17 @@ def normalize_header(market: Market, header_value: str) -> str:
         return cleaned
 
     lowered = token.lower()
+    if market in BODY_AUTH_MARKETS:
+        # Значение уходит в тело запроса, где схемы не бывает. Префикс
+        # «tma» тут не безобиден: с ним подпись не сойдётся, а площадка
+        # ответит невнятной ошибкой. Пользователь же копирует initData по
+        # привычке от Portals — вместе с префиксом.
+        if lowered.startswith("tma "):
+            return token[4:].strip()
+        return token
+
     if any(lowered.startswith(scheme) for scheme in KNOWN_SCHEMES):
         return token  # схема уже указана — не вмешиваемся
-
-    if market in BODY_AUTH_MARKETS:
-        # Уходит в тело запроса как есть: схемы там не бывает.
-        return token
 
     if market in TMA_MARKETS and looks_like_init_data(token):
         return f"tma {token}"

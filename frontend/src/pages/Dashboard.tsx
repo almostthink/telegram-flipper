@@ -3,12 +3,6 @@ import { api, signedTon, ton } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { Alert, Button, Empty, Page, Stat } from '../components/ui'
 
-const MARKET_LABELS: Record<string, string> = {
-  portals: 'Portals',
-  mrkt: 'MRKT',
-  getgems: 'GetGems',
-}
-
 export default function Dashboard() {
   const { data, error, reload } = useApi(() => api.status(), { pollMs: 10000 })
   const [busy, setBusy] = useState(false)
@@ -138,7 +132,7 @@ export default function Dashboard() {
                   <span
                     className={`h-2 w-2 rounded-full ${market.connected ? 'bg-profit' : 'bg-neutral-600'}`}
                   />
-                  <span className="text-sm text-neutral-200">{MARKET_LABELS[key] ?? key}</span>
+                  <span className="text-sm text-neutral-200">{market.label || key}</span>
                   <span
                     className={`badge ${
                       market.trade_enabled ? 'bg-accent/15 text-accent' : 'bg-ink-500 text-neutral-400'

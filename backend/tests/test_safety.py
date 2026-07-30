@@ -79,7 +79,7 @@ def test_stale_config_drops_removed_marketplaces():
     Без чистки закрытая площадка воскресала бы из старого config.json после
     удаления из кода.
     """
-    from app.config import _drop_unknown_marketplaces
+    from app.config import _reconcile_marketplaces
 
     stored = {
         "paper_mode": True,
@@ -89,16 +89,34 @@ def test_stale_config_drops_removed_marketplaces():
             "выдуманная": {"enabled": True},
         },
     }
-    cleaned = _drop_unknown_marketplaces(stored)
+    cleaned = _reconcile_marketplaces(stored)
 
-    assert set(cleaned["marketplaces"]) == {"mrkt", "tonnel"}
+    assert "выдуманная" not in cleaned["marketplaces"]
     # Остальные разделы конфига трогать нельзя.
     assert cleaned["paper_mode"] is True
     # Исходный словарь не мутируем.
     assert "выдуманная" in stored["marketplaces"]
 
 
-def test_config_without_marketplaces_section_is_untouched():
-    from app.config import _drop_unknown_marketplaces
+def test_stale_config_gains_new_marketplaces():
+    """Появившаяся площадка должна дойти до пользователя со старым конфигом.
 
-    assert _drop_unknown_marketplaces({"paper_mode": False}) == {"paper_mode": False}
+    Сохранённый словарь замещает значения по умолчанию целиком, поэтому без
+    добавления новая площадка не появилась бы в настройках никогда — ни
+    включить, ни токен вставить.
+    """
+    from app.config import _reconcile_marketplaces
+    from app.domain import Market
+
+    stored = {"marketplaces": {"mrkt": {"enabled": True, "fee_sell": 0.02}}}
+    merged = _reconcile_marketplaces(stored)["marketplaces"]
+
+    assert set(merged) == {market.value for market in Market}
+    # Правки пользователя по уже известной площадке остаются как были.
+    assert merged["mrkt"]["fee_sell"] == 0.02
+
+
+def test_config_without_marketplaces_section_is_untouched():
+    from app.config import _reconcile_marketplaces
+
+    assert _reconcile_marketplaces({"paper_mode": False}) == {"paper_mode": False}
