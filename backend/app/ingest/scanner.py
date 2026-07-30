@@ -24,6 +24,7 @@ from app.adapters.base import AuthExpired, Marketplace, MarketplaceError
 from app.auth.tma import auth
 from app.config import Settings
 from app.domain import Market
+from app.ingest import model_colors
 from app.storage import repo
 from app.storage.db import session_scope
 
@@ -71,6 +72,7 @@ class ScanStats:
     sales: int = 0
     listing_events: int = 0
     attribute_floors: int = 0
+    model_colors: int = 0
     vanished: int = 0
     tts_recovered: int = 0
     errors: list[str] = field(default_factory=list)
@@ -84,6 +86,7 @@ class ScanStats:
         self.sales += other.sales
         self.listing_events += other.listing_events
         self.attribute_floors += other.attribute_floors
+        self.model_colors += other.model_colors
         self.vanished += other.vanished
         self.tts_recovered += other.tts_recovered
         self.errors.extend(other.errors)
@@ -315,6 +318,17 @@ class Scanner:
                 log.debug("%s/%s: %s", adapter.name.value, collection, exc)
             else:
                 await self._save_attribute_floors(floors, stats)
+
+        # Цвет модели нужен для монохрома и добывается разбором её
+        # анимации. Разбираем понемногу: цвет влияет на надбавку к оценке,
+        # а не на решение прямо сейчас, и ради него не стоит снова
+        # упираться в лимит частоты.
+        pending = await model_colors.pending_models(collection)
+        if pending:
+            try:
+                stats.model_colors += await model_colors.resolve(adapter, collection, pending)
+            except MarketplaceError as exc:
+                log.debug("%s/%s: цвета моделей — %s", adapter.name.value, collection, exc)
 
         async with session_scope() as session:
             stats.tts_recovered += await repo.attach_tts(

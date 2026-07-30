@@ -57,6 +57,9 @@ class Signal:
     passed: bool
     reject_reason: Reject | None = None
     explanation: str = ""
+    #: Совпадение цвета модели с цветом фона: 0..1. None — цвет модели
+    #: ещё не добыт, и это не то же самое, что «цвета разные».
+    monochrome_score: float | None = None
 
     @property
     def market(self) -> Market:
@@ -71,6 +74,7 @@ class Signal:
             number=self.listing.number,
             number_score=trait.score,
             number_label=trait.label if trait.is_notable else None,
+            monochrome_score=self.monochrome_score,
             model=self.listing.model,
             backdrop=self.listing.backdrop,
             symbol=self.listing.symbol,
@@ -111,6 +115,8 @@ def listing_to_gift(listing: ListingSnapshot) -> Gift:
     return Gift(
         collection=listing.collection,
         external_id=listing.listing_id,
+        number=listing.number,
+        backdrop_color=listing.backdrop_color,
         model=attribute(listing.model, listing.model_rarity, AttributeKind.MODEL),
         backdrop=attribute(listing.backdrop, listing.backdrop_rarity, AttributeKind.BACKDROP),
         symbol=attribute(listing.symbol, listing.symbol_rarity, AttributeKind.SYMBOL),
@@ -175,6 +181,7 @@ def _evaluate_listing(
 ) -> Signal:
     gift = listing_to_gift(listing)
     fair = pricing.estimate(data.context, gift)
+    mono = pricing.monochrome_score(data.context, gift)
 
     fee_sell = data.fee_sell_by_market.get(listing.market, 0.05)
     fee_buy = data.fee_buy_by_market.get(listing.market, 0.0)
@@ -200,7 +207,10 @@ def _evaluate_listing(
         score=round(score, 5),
         passed=reject is None,
         reject_reason=reject,
-        explanation=_explain(listing, fair, data.liquidity, roi, fee_sell, reject),
+        explanation=_explain(
+            listing, fair, data.liquidity, roi, fee_sell, reject, mono
+        ),
+        monochrome_score=mono,
     )
 
 
@@ -261,6 +271,7 @@ def _explain(
     roi: float,
     fee_sell: float,
     reject: Reject | None,
+    monochrome: float | None = None,
 ) -> str:
     """Человекочитаемое обоснование — попадает в журнал и в интерфейс.
 
@@ -294,6 +305,11 @@ def _explain(
             collectible_note += f" — {trait.label}, рынок платит за такие надбавку."
         else:
             collectible_note += "."
+
+    if monochrome is not None and monochrome >= 0.6:
+        collectible_note += (
+            f" Монохром: цвет модели совпадает с фоном на {monochrome * 100:.0f}%."
+        )
 
     tail = f" ОТКЛОНЁН: {reject.value}." if reject else " Прошёл все фильтры."
     return head + body + collectible_note + tail

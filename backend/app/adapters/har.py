@@ -127,6 +127,9 @@ class HarImportResult:
         return MarketEndpoints(
             base_url=self.base_url or fallback.base_url,
             endpoints=merged,
+            # Хранилище картинок в HAR не распознаётся: там нет JSON-ответов
+            # с массивами. Затирать рабочее значение пустотой нельзя.
+            cdn_url=fallback.cdn_url,
         )
 
 

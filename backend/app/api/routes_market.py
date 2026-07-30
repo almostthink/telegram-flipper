@@ -215,6 +215,7 @@ def _signal_dict(row: SignalRecord) -> dict:
         "number": row.number,
         "number_score": round(row.number_score or 0.0, 3),
         "number_label": row.number_label,
+        "monochrome_score": row.monochrome_score,
         "model": row.model,
         "backdrop": row.backdrop,
         "symbol": row.symbol,

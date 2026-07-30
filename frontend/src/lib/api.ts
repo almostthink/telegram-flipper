@@ -81,6 +81,7 @@ export interface Signal {
   number: number | null
   number_score: number
   number_label: string | null
+  monochrome_score: number | null
   model: string | null
   backdrop: string | null
   symbol: string | null
@@ -249,6 +250,8 @@ export interface AppConfig {
     number_bonus: number
     preferred_backdrops: string[]
     backdrop_bonus: number
+    monochrome_bonus: number
+    min_monochrome_score: number
     require_collectible: boolean
     min_number_score: number
   }

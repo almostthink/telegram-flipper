@@ -64,6 +64,7 @@ def load_overrides() -> dict[Market, MarketEndpoints]:
         result[market] = MarketEndpoints(
             base_url=spec.get("base_url") or DEFAULT_ENDPOINTS[market].base_url,
             endpoints=endpoints,
+            cdn_url=spec.get("cdn_url") or DEFAULT_ENDPOINTS[market].cdn_url,
         )
     return result
 
@@ -79,6 +80,7 @@ def save_override(market: Market, endpoints: MarketEndpoints) -> None:
 
     existing[market.value] = {
         "base_url": endpoints.base_url,
+        "cdn_url": endpoints.cdn_url,
         "endpoints": {
             name: {"path": spec.path, "method": spec.method, "json_path": spec.json_path}
             for name, spec in endpoints.endpoints.items()
@@ -121,7 +123,11 @@ def endpoints_for(market: Market) -> MarketEndpoints:
         return base
     merged = dict(base.endpoints)
     merged.update(overrides.endpoints)
-    return MarketEndpoints(base_url=overrides.base_url or base.base_url, endpoints=merged)
+    return MarketEndpoints(
+        base_url=overrides.base_url or base.base_url,
+        endpoints=merged,
+        cdn_url=overrides.cdn_url or base.cdn_url,
+    )
 
 
 #: Ограничители частоты живут дольше адаптеров. Площадка считает запросы

@@ -16,6 +16,7 @@ from app.analytics import liquidity as liquidity_mod
 from app.analytics.pricing import PricingContext
 from app.analytics.signals import EvaluationInput, Signal, evaluate_collection
 from app.config import Settings
+from app.ingest import model_colors
 from app.storage import repo
 from app.storage.db import session_scope
 from app.storage.models import ListingSnapshot, SaleRecord
@@ -71,6 +72,10 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
         attribute_floors = await repo.attribute_floor_map(session, collection)
         top_bid = await repo.best_offer(session, collection)
 
+    # Цвета моделей добываются сканером отдельно и живут в своей таблице:
+    # площадки их не отдают, а без них не определить монохром.
+    palette = await model_colors.known_colors(collection)
+
     clean_sales = [sale for sale in sales if not sale.suspicious]
 
     metrics = liquidity_mod.compute(
@@ -92,6 +97,8 @@ async def evaluate_one(settings: Settings, collection: str) -> list[Signal]:
         number_bonus=settings.collectible.number_bonus,
         preferred_backdrops=settings.collectible.preferred_backdrops,
         backdrop_bonus=settings.collectible.backdrop_bonus,
+        model_colors=palette,
+        monochrome_bonus=settings.collectible.monochrome_bonus,
     )
 
     tradable = [

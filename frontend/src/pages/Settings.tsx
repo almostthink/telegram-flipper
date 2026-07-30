@@ -153,11 +153,18 @@ export default function Settings() {
               Коллекционная ценность
             </h2>
             <p className="mb-4 text-xs leading-relaxed text-slate-500">
-              Рынок платит надбавку за порядковый номер и за отдельные фоны —
-              независимо от редкости модели. Подарок #1 стоит кратно дороже
-              #40597 при одинаковых атрибутах. Эти настройки влияют на оценку,
-              пока нет истории сделок; как только она накопится, регрессия
-              оценит те же факторы по фактическим ценам сама.
+              Рынок платит надбавку за порядковый номер, за отдельные фоны и
+              за монохром — независимо от редкости модели. Подарок #1 стоит
+              кратно дороже #40597 при одинаковых атрибутах. Эти настройки
+              влияют на оценку, пока нет истории сделок; как только она
+              накопится, регрессия оценит те же факторы по фактическим ценам
+              сама.
+              <br />
+              Монохром — когда цвет модели совпадает с цветом фона. Цвет фона
+              площадка отдаёт числом, а цвет модели приходится доставать из её
+              анимации: он разбирается по нескольку моделей за проход и потом
+              хранится навсегда. Пока цвет модели не добыт, монохром у её лотов
+              не определяется — но и оценку не занижает.
               <br />
               <span className="text-warn">
                 Учтите: коллекционные лоты дороже, но продаются дольше —
@@ -186,6 +193,20 @@ export default function Settings() {
                   value={config.data.collectible.min_number_score}
                   onSave={(value) =>
                     void patch({ collectible: { min_number_score: value } })
+                  }
+                />
+                <Field
+                  label="Надбавка за монохром (доля)"
+                  value={config.data.collectible.monochrome_bonus}
+                  onSave={(value) =>
+                    void patch({ collectible: { monochrome_bonus: value } })
+                  }
+                />
+                <Field
+                  label="Порог совпадения цветов (0..1)"
+                  value={config.data.collectible.min_monochrome_score}
+                  onSave={(value) =>
+                    void patch({ collectible: { min_monochrome_score: value } })
                   }
                 />
                 <div className="flex items-center justify-between gap-3 pt-1">

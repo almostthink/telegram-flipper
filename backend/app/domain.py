@@ -73,6 +73,10 @@ class Gift:
     model: Attribute | None = None
     backdrop: Attribute | None = None
     symbol: Attribute | None = None
+    #: Цвет фона как 0xRRGGBB. Площадка отдаёт его числом прямо в карточке
+    #: лота — это единственный цвет, известный без дополнительной работы.
+    #: Нужен для монохрома: цвет модели сравнивается именно с ним.
+    backdrop_color: int | None = None
 
     def attribute(self, kind: AttributeKind) -> Attribute | None:
         return {

@@ -60,8 +60,13 @@ BUYER_MARKUP = 1.02
 #: то же самое, что отдать 1.961% с покупательской цены.
 FEE_AS_SELL_SIDE = 1 - 1 / BUYER_MARKUP  # ≈ 0.019608
 
+#: Хранилище анимаций и картинок. Ключи вроде
+#: ``gifts/stickers/<hex>.json`` из ответов API даны относительно него.
+STICKER_CDN = "https://cdn.tgmrkt.io"
+
 DEFAULT_ENDPOINTS = MarketEndpoints(
     base_url="https://api.tgmrkt.io",
+    cdn_url=STICKER_CDN,
     endpoints={
         # --- подтверждено записью трафика ---
         "listings": EndpointSpec("/api/v1/gifts/saling", method="POST", json_path="gifts"),
@@ -182,10 +187,17 @@ def parse_mrkt_gift(raw: dict) -> Gift:
     except (TypeError, ValueError):
         number_value = None
 
+    backdrop_color = pick(raw, "backdropColorsCenterColor")
+    try:
+        backdrop_color_value = int(backdrop_color) if backdrop_color is not None else None
+    except (TypeError, ValueError):
+        backdrop_color_value = None
+
     return Gift(
         collection=str(pick(raw, "collectionName", "collectionTitle", "title", default="")),
         external_id=str(pick(raw, "id", default="")),
         number=number_value,
+        backdrop_color=backdrop_color_value,
         model=attribute("modelName", "modelRarityPerMille", AttributeKind.MODEL),
         backdrop=attribute("backdropName", "backdropRarityPerMille", AttributeKind.BACKDROP),
         symbol=attribute("symbolName", "symbolRarityPerMille", AttributeKind.SYMBOL),

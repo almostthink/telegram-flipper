@@ -56,6 +56,8 @@ class ListingSnapshot(Base):
     model_rarity: Mapped[float | None] = mapped_column(Float)
     backdrop_rarity: Mapped[float | None] = mapped_column(Float)
     symbol_rarity: Mapped[float | None] = mapped_column(Float)
+    #: Цвет фона 0xRRGGBB — половина признака монохрома.
+    backdrop_color: Mapped[int | None] = mapped_column(Integer)
     price_ton: Mapped[float] = mapped_column(Float)
     seller: Mapped[str | None] = mapped_column(String(128))
     listed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -102,6 +104,10 @@ class SaleRecord(Base):
     model_rarity: Mapped[float | None] = mapped_column(Float)
     backdrop_rarity: Mapped[float | None] = mapped_column(Float)
     symbol_rarity: Mapped[float | None] = mapped_column(Float)
+    #: Цвет фона 0xRRGGBB. Хранится и у сделок, чтобы регрессия могла
+    #: выучить надбавку за монохром по фактическим ценам, а не брать её
+    #: из настройки.
+    backdrop_color: Mapped[int | None] = mapped_column(Integer)
     price_ton: Mapped[float] = mapped_column(Float)
     sold_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     buyer: Mapped[str | None] = mapped_column(String(128))
@@ -116,6 +122,33 @@ class SaleRecord(Base):
         UniqueConstraint("market", "external_id", name="uq_sale"),
         Index("ix_sale_slice", "collection", "model", "sold_at"),
     )
+
+
+class ModelColor(Base):
+    """Основной цвет модели — то, чего не отдаёт ни одна площадка.
+
+    Нужен для монохрома: цвет фона известен из карточки лота, а цвет
+    самой модели приходится доставать из её анимации. Разбор стоит
+    запроса к CDN, поэтому результат хранится: внешность модели не
+    меняется никогда, и повторять работу незачем.
+
+    Неудачи тоже записываются. Иначе каждый проход заново ходил бы за
+    одним и тем же недоступным файлом.
+    """
+
+    __tablename__ = "model_colors"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collection: Mapped[str] = mapped_column(String(128), index=True)
+    model: Mapped[str] = mapped_column(String(128), index=True)
+    #: Цвет как 0xRRGGBB. None означает «добыть не удалось».
+    rgb: Mapped[int | None] = mapped_column(Integer)
+    #: Сколько раз пытались. Растёт только при неудачах.
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str | None] = mapped_column(Text)
+    resolved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (UniqueConstraint("collection", "model", name="uq_model_color"),)
 
 
 class ListingEvent(Base):
@@ -267,6 +300,9 @@ class SignalRecord(Base):
     #: было видно, за что именно движок доплачивает.
     number_score: Mapped[float] = mapped_column(Float, default=0.0)
     number_label: Mapped[str | None] = mapped_column(String(64))
+    #: Совпадение цвета модели с цветом фона: 0..1. None означает, что
+    #: цвет модели ещё не добыт, а не что цвета разные.
+    monochrome_score: Mapped[float | None] = mapped_column(Float)
 
     ask_ton: Mapped[float] = mapped_column(Float)
     fair_value_ton: Mapped[float] = mapped_column(Float)

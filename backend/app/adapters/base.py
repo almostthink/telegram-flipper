@@ -67,6 +67,10 @@ class EndpointSpec:
 class MarketEndpoints:
     base_url: str
     endpoints: dict[str, EndpointSpec] = field(default_factory=dict)
+    #: Адрес хранилища картинок и анимаций. Отдельно от API: у MRKT это
+    #: другой домен, а ключи анимаций в ответах даны относительно него.
+    #: Правится так же, как остальные адреса, без пересборки.
+    cdn_url: str = ""
 
     def get(self, name: str) -> EndpointSpec:
         spec = self.endpoints.get(name)
@@ -344,6 +348,36 @@ class Marketplace(ABC):
     ) -> list[ActivityEvent]:
         """Лента событий рынка — источник истории сделок."""
         return []
+
+    async def fetch_asset(self, key: str) -> Any:
+        """Файл из хранилища площадки по ключу из ответа API.
+
+        Нужен для цвета модели: он нигде не отдаётся полем, но анимация
+        модели лежит в открытом хранилище и содержит цвета явно.
+        """
+        if not self.endpoints.cdn_url or not key:
+            return None
+
+        await self.open()
+        assert self._client is not None
+        await self._limiter.wait()
+
+        url = f"{self.endpoints.cdn_url.rstrip('/')}/{key.lstrip('/')}"
+        try:
+            response = await self._client.get(url)
+        except httpx.HTTPError as exc:
+            raise MarketplaceError(f"{self.name}: не удалось скачать {key}: {exc}") from exc
+
+        if response.status_code == 429:
+            self._limiter.penalize()
+            raise RateLimited(f"{self.name}: 429 на {key}")
+        if response.status_code >= 400:
+            raise MarketplaceError(f"{self.name}: {response.status_code} на {key}")
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MarketplaceError(f"{self.name}: {key} не JSON") from exc
 
     async def top_offers(self) -> list[CollectionOffer]:
         """Верхние заявки на покупку по всем коллекциям — одним запросом.

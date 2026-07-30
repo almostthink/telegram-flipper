@@ -131,7 +131,19 @@ export default function Opportunities() {
                   )}
                 </td>
                 <td className="px-4 py-2.5 text-slate-400">
-                  <div>{signal.model ?? '—'}</div>
+                  <div className="flex items-center gap-2">
+                    <span>{signal.model ?? '—'}</span>
+                    {signal.monochrome_score != null && signal.monochrome_score >= 0.6 && (
+                      <span
+                        title={`Цвет модели совпадает с фоном на ${Math.round(
+                          signal.monochrome_score * 100,
+                        )}%`}
+                        className="badge bg-accent/15 text-accent"
+                      >
+                        монохром
+                      </span>
+                    )}
+                  </div>
                   {signal.backdrop && (
                     <div className="text-xs text-slate-600">{signal.backdrop}</div>
                   )}

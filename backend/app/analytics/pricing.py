@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from app.analytics import color as color_mod
 from app.analytics import numerology
 from app.analytics.rarity import known_rarity_count, rarity_score, rarity_scores
 from app.domain import AttributeKind, Gift, utcnow
@@ -86,6 +87,11 @@ class PricingContext:
     preferred_backdrops: list[str] = field(default_factory=list)
     #: Надбавка за попадание фона в этот список.
     backdrop_bonus: float = 0.15
+    #: Цвета моделей коллекции: имя модели → 0xRRGGBB. Пусто, пока цвета
+    #: не добыты — тогда монохром просто не учитывается.
+    model_colors: dict[str, int] = field(default_factory=dict)
+    #: Надбавка за монохром: цвет модели совпал с цветом фона.
+    monochrome_bonus: float = 0.20
 
 
 # --- Baseline ------------------------------------------------------------
@@ -124,12 +130,37 @@ def collectible_premium(
         if gift.backdrop.name.strip().lower() in wanted:
             backdrop_part = context.backdrop_bonus
 
-    premium = 1.0 + number_part + backdrop_part
+    # Монохром — совпадение цвета модели с цветом фона. Оценивается
+    # долей, а не признаком: близкий, но заметно другой оттенок стоит
+    # между «в тон» и «мимо», и резкий порог здесь дал бы скачок цены.
+    mono = monochrome_score(context, gift)
+    mono_part = context.monochrome_bonus * (mono or 0.0)
+
+    premium = 1.0 + number_part + backdrop_part + mono_part
     return premium, {
         "number_score": round(trait.score, 3),
         "premium_number": round(number_part, 3),
         "premium_backdrop": round(backdrop_part, 3),
+        "monochrome_score": round(mono, 3) if mono is not None else -1.0,
+        "premium_monochrome": round(mono_part, 3),
     }
+
+
+def monochrome_score(context: PricingContext, gift: Gift) -> float | None:
+    """Насколько цвет модели совпадает с цветом фона: 0..1 или None.
+
+    None означает «неизвестно»: цвет модели ещё не добыт или площадка не
+    прислала цвет фона. Это не ноль — отсутствие данных не должно
+    работать как уверенное «не монохром».
+    """
+    if gift.model is None or gift.backdrop_color is None:
+        return None
+    model_rgb = context.model_colors.get(gift.model.name)
+    if model_rgb is None:
+        return None
+    return color_mod.match_score(
+        color_mod.from_int(model_rgb), color_mod.from_int(gift.backdrop_color)
+    )
 
 
 def baseline_value(context: PricingContext, gift: Gift) -> tuple[float, dict[str, float]]:

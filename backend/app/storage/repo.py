@@ -40,6 +40,7 @@ def _gift_columns(gift: Gift) -> dict[str, object]:
         "model_rarity": gift.model.rarity_permille if gift.model else None,
         "backdrop_rarity": gift.backdrop.rarity_permille if gift.backdrop else None,
         "symbol_rarity": gift.symbol.rarity_permille if gift.symbol else None,
+        "backdrop_color": gift.backdrop_color,
     }
 
 
