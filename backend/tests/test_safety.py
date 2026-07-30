@@ -52,22 +52,25 @@ def test_auto_trade_allowed_with_live_and_whitelist(client):
     )
 
 
-def test_dead_marketplace_is_gone_from_enum():
-    """Tonnel прекратил работу и удалён из перечисления, а не выключен флагом.
+def test_every_market_has_an_adapter():
+    """Площадка в перечислении без адаптера — падение при первом же обращении.
 
-    Оставленный выключенным адаптер продолжал бы значиться в интерфейсе, а при
-    случайном включении — ходить в мёртвый домен и копить таймауты.
+    Tonnel сюда вернулся: запись трафика подтвердила, что площадка
+    работает. Ровно поэтому проверка теперь про соответствие, а не про
+    конкретный список: он меняется, а требование — нет.
     """
     from app.adapters import registry
     from app.domain import Market
 
-    assert {market.value for market in Market} == {"portals", "mrkt", "getgems"}
-    assert {market.value for market in registry.ADAPTER_CLASSES} == {
+    assert {market.value for market in Market} == {
         "portals",
         "mrkt",
+        "tonnel",
         "getgems",
     }
-    assert Settings().marketplaces.keys() == {"portals", "mrkt", "getgems"}
+    assert set(registry.ADAPTER_CLASSES) == set(Market)
+    assert set(registry.DEFAULT_ENDPOINTS) == set(Market)
+    assert set(Settings().marketplaces) == set(registry.ADAPTER_CLASSES)
 
 
 def test_stale_config_drops_removed_marketplaces():
@@ -88,11 +91,11 @@ def test_stale_config_drops_removed_marketplaces():
     }
     cleaned = _drop_unknown_marketplaces(stored)
 
-    assert set(cleaned["marketplaces"]) == {"mrkt"}
+    assert set(cleaned["marketplaces"]) == {"mrkt", "tonnel"}
     # Остальные разделы конфига трогать нельзя.
     assert cleaned["paper_mode"] is True
     # Исходный словарь не мутируем.
-    assert "tonnel" in stored["marketplaces"]
+    assert "выдуманная" in stored["marketplaces"]
 
 
 def test_config_without_marketplaces_section_is_untouched():

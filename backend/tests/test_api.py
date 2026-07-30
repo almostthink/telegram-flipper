@@ -16,19 +16,20 @@ def test_health_ok(client):
 
 
 def test_only_mrkt_is_tradable(client):
-    """Торгуем исключительно на MRKT.
+    """По умолчанию торгуем только на MRKT.
 
-    Схемы MRKT и Portals обе восстановлены из записи трафика, но у
-    Portals подтверждены только запросы на чтение. Покупать по
-    неподтверждённому пути нельзя, поэтому он остаётся вторым источником
-    цен для кросс-маркет сверки.
+    Схемы MRKT, Portals и Tonnel восстановлены из записи трафика, но
+    подтверждены на них разные вещи. У MRKT торговые пути взяты из кода
+    мини-аппа, у остальных пока только чтение. Покупать по
+    неподтверждённому пути нельзя, поэтому торговля там включается
+    осознанно, а не достаётся по умолчанию.
     """
     body = client.get(f"{API_PREFIX}/status").json()
-    assert set(body["marketplaces"]) == {"portals", "mrkt", "getgems"}
-    assert "tonnel" not in body["marketplaces"], "Tonnel закрылся и удалён"
+    assert set(body["marketplaces"]) == {"portals", "mrkt", "tonnel", "getgems"}
 
     assert body["marketplaces"]["mrkt"]["enabled"] is True
     assert body["marketplaces"]["mrkt"]["trade_enabled"] is True
+    assert body["marketplaces"]["tonnel"]["trade_enabled"] is False
 
     # Portals читаем, но не торгуем.
     assert body["marketplaces"]["portals"]["enabled"] is True

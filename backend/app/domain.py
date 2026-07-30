@@ -14,13 +14,14 @@ from enum import StrEnum
 class Market(StrEnum):
     """Площадки, с которыми работает приложение.
 
-    Tonnel убран: площадка прекратила работу. Значение из перечисления
-    удалено целиком, а не помечено выключенным — иначе адаптер продолжал
-    бы стучаться в мёртвый домен и засорять журнал ошибками.
+    Tonnel возвращён: площадка работает, запись трафика это подтвердила.
+    Её отличает аукцион — на остальных площадках подарки только
+    выставляют по фиксированной цене.
     """
 
     PORTALS = "portals"
     MRKT = "mrkt"
+    TONNEL = "tonnel"
     GETGEMS = "getgems"
 
 
@@ -175,6 +176,27 @@ class CollectionOffer:
     collection: str
     price_ton: float
     amount: int = 1
+
+
+@dataclass(slots=True)
+class Auction:
+    """Лот на аукционе.
+
+    Аукцион есть только у Tonnel. Шаг ставки там не фиксированный, а
+    процентный: каждая следующая ставка минимум на 5% выше текущей. Из-за
+    этого цена растёт быстро, и потолок «флор минус спред» пробивается
+    за считанные ставки — торговаться до последнего здесь нельзя.
+    """
+
+    market: Market
+    auction_id: str
+    gift: Gift
+    listing_id: str
+    starting_bid_ton: float
+    highest_bid_ton: float
+    min_bid_ton: float
+    ends_at: datetime | None = None
+    bids: int = 0
 
 
 @dataclass(slots=True)

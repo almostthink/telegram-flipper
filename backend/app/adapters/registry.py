@@ -10,7 +10,7 @@ import json
 import logging
 
 from app import paths
-from app.adapters import mrkt, portals, reference
+from app.adapters import mrkt, portals, reference, tonnel
 from app.adapters.base import EndpointSpec, MarketEndpoints, Marketplace, RateLimiter
 from app.auth.tma import auth
 from app.config import Settings
@@ -21,12 +21,14 @@ log = logging.getLogger(__name__)
 DEFAULT_ENDPOINTS: dict[Market, MarketEndpoints] = {
     Market.PORTALS: portals.DEFAULT_ENDPOINTS,
     Market.MRKT: mrkt.DEFAULT_ENDPOINTS,
+    Market.TONNEL: tonnel.DEFAULT_ENDPOINTS,
     Market.GETGEMS: reference.GETGEMS_ENDPOINTS,
 }
 
 ADAPTER_CLASSES: dict[Market, type[Marketplace]] = {
     Market.PORTALS: portals.PortalsAdapter,
     Market.MRKT: mrkt.MrktAdapter,
+    Market.TONNEL: tonnel.TonnelAdapter,
     Market.GETGEMS: reference.GetGemsAdapter,
 }
 

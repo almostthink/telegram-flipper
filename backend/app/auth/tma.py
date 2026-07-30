@@ -40,7 +40,11 @@ log = logging.getLogger(__name__)
 MINI_APPS: dict[Market, tuple[str, str]] = {
     Market.PORTALS: ("portals", "market"),
     Market.MRKT: ("mrkt", "app"),
+    Market.TONNEL: ("tonnel_network_bot", "gifts"),
 }
+
+#: Площадки, которым initData уходит в теле запроса как есть, без схемы.
+BODY_AUTH_MARKETS = {Market.TONNEL}
 
 #: Считаем токен протухшим заранее, чтобы не ловить 401 в момент сделки.
 REFRESH_MARGIN_SEC = 6 * 3600
@@ -177,6 +181,10 @@ def normalize_header(market: Market, header_value: str) -> str:
     lowered = token.lower()
     if any(lowered.startswith(scheme) for scheme in KNOWN_SCHEMES):
         return token  # схема уже указана — не вмешиваемся
+
+    if market in BODY_AUTH_MARKETS:
+        # Уходит в тело запроса как есть: схемы там не бывает.
+        return token
 
     if market in TMA_MARKETS and looks_like_init_data(token):
         return f"tma {token}"

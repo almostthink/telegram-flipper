@@ -169,6 +169,9 @@ class AuthPlacement(StrEnum):
 
     HEADER = "header"
     COOKIE = "cookie"
+    #: Tonnel не использует заголовок вовсе: initData Telegram лежит прямо
+    #: в JSON запроса. Именно поэтому Authorization в её трафике не найти.
+    BODY = "body"
 
 
 class Marketplace(ABC):
@@ -228,6 +231,10 @@ class Marketplace(ABC):
     def _auth_header_name(self) -> str:
         return "Cookie" if self.auth_placement is AuthPlacement.COOKIE else "Authorization"
 
+    @property
+    def _sends_auth_header(self) -> bool:
+        return self.auth_placement is not AuthPlacement.BODY
+
     def set_auth(self, header_value: str | None) -> None:
         """Обновляем токен без пересоздания клиента."""
         self.auth_header = header_value
@@ -236,6 +243,17 @@ class Marketplace(ABC):
                 self._client.headers[self._auth_header_name] = header_value
             else:
                 self._client.headers.pop(self._auth_header_name, None)
+
+    #: Под каким именем класть учётные данные в тело. У Tonnel их два:
+    #: pageGifts ждёт user_auth, остальные — authData.
+    body_auth_field: str = "authData"
+    body_auth_overrides: dict[str, str] = {}
+
+    def _inject_body_auth(self, endpoint: str, json_body: dict | None) -> dict | None:
+        if self.auth_placement is not AuthPlacement.BODY or not self.auth_header:
+            return json_body
+        field = self.body_auth_overrides.get(endpoint, self.body_auth_field)
+        return {**(json_body or {}), field: self.auth_header}
 
     def _default_headers(self) -> dict[str, str]:
         headers = {
@@ -247,7 +265,7 @@ class Marketplace(ABC):
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
             ),
         }
-        if self.auth_header:
+        if self.auth_header and self._sends_auth_header:
             headers[self._auth_header_name] = self.auth_header
         return headers
 
@@ -272,6 +290,7 @@ class Marketplace(ABC):
         # Часть адресов содержит идентификатор прямо в пути: отмена ордера
         # адресуется как /orders/cancel/<id>, тела у неё нет.
         path = spec.path.format(**path_params) if path_params else spec.path
+        json_body = self._inject_body_auth(endpoint, json_body)
         await self.open()
         assert self._client is not None
 

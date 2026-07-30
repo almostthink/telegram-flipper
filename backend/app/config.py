@@ -21,7 +21,7 @@ from app import paths
 APP_VERSION = "0.1.0"
 API_PREFIX = "/api/v1"
 
-MarketplaceName = Literal["portals", "mrkt", "getgems"]
+MarketplaceName = Literal["portals", "mrkt", "tonnel", "getgems"]
 
 
 class MarketplaceConfig(BaseModel):
@@ -210,6 +210,10 @@ class Settings(BaseSettings):
             # запросы на чтение, а покупать по неподтверждённому пути
             # нельзя. Для кросс-маркет сверки этого достаточно.
             "portals": MarketplaceConfig(enabled=True, trade_enabled=False, fee_sell=0.05),
+            # Tonnel — вторая торговая площадка и единственная с аукционом.
+            # Схема восстановлена записью трафика; торговые тела запросов
+            # ещё не подтверждены, поэтому торговля включается осознанно.
+            "tonnel": MarketplaceConfig(enabled=True, trade_enabled=False, fee_sell=0.06),
             # GetGems выключен.
             #
             # У площадки GraphQL с persisted queries: текст запроса не

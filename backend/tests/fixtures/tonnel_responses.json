@@ -1,0 +1,277 @@
+{
+  "gifts": [
+    {
+      "gift_num": 10016,
+      "customEmojiId": "5240077220306773349",
+      "gift_id": 900000,
+      "name": "Witch Hat",
+      "model": "Pyromancy (1.5%)",
+      "asset": "TON",
+      "symbol": "Spooky Cat (2.4%)",
+      "backdrop": "Pistachio (2%)",
+      "availabilityIssued": 0,
+      "availabilityTotal": 0,
+      "backdropData": {},
+      "message_in_channel": 0,
+      "can_transfer_since": "2026-07-20T12:47:30.000Z",
+      "price": 3.95,
+      "dutchAuctionData": null,
+      "status": "forsale",
+      "limited": false,
+      "crafted": false,
+      "auction": null,
+      "export_at": "2026-08-03T12:47:31.000Z",
+      "premarketData": {}
+    },
+    {
+      "gift_num": 224402,
+      "customEmojiId": "5309952013180639684",
+      "gift_id": 900001,
+      "name": "Liberty Figure",
+      "model": "Homeland (0.5%)",
+      "asset": "TON",
+      "symbol": "Flashlight (0.4%)",
+      "backdrop": "Mexican Pink (1.5%)",
+      "availabilityIssued": 0,
+      "availabilityTotal": 0,
+      "backdropData": {},
+      "message_in_channel": 0,
+      "can_transfer_since": "2026-07-30T16:14:35.000Z",
+      "price": 27,
+      "dutchAuctionData": null,
+      "status": "forsale",
+      "limited": false,
+      "crafted": false,
+      "auction": null,
+      "export_at": "2026-08-13T16:14:36.000Z",
+      "premarketData": {}
+    },
+    {
+      "gift_num": 176696,
+      "customEmojiId": "5273759676691946625",
+      "gift_id": 900002,
+      "name": "Liberty Figure",
+      "model": "Ruby Flame (3%)",
+      "asset": "TON",
+      "symbol": "Bike Helmet (0.2%)",
+      "backdrop": "Pine Green (1.5%)",
+      "availabilityIssued": 0,
+      "availabilityTotal": 0,
+      "backdropData": {},
+      "message_in_channel": 0,
+      "can_transfer_since": "2026-07-26T14:53:27.000Z",
+      "price": 109,
+      "dutchAuctionData": null,
+      "status": "forsale",
+      "limited": false,
+      "crafted": false,
+      "auction": null,
+      "export_at": "2026-08-13T21:01:37.000Z",
+      "premarketData": {}
+    },
+    {
+      "gift_num": 1275,
+      "customEmojiId": "5314399413160929373",
+      "gift_id": 900003,
+      "name": "Top Hat",
+      "model": "Maestro (3%)",
+      "asset": "TON",
+      "symbol": "Mustang (0.2%)",
+      "backdrop": "Mustard (1.5%)",
+      "availabilityIssued": 0,
+      "availabilityTotal": 0,
+      "backdropData": {},
+      "message_in_channel": 0,
+      "can_transfer_since": "2025-11-13T20:08:07.000Z",
+      "price": 8.4,
+      "dutchAuctionData": null,
+      "status": "forsale",
+      "limited": false,
+      "crafted": false,
+      "auction": null,
+      "export_at": "2026-08-12T18:24:52.000Z",
+      "premarketData": {}
+    },
+    {
+      "gift_num": 284766,
+      "customEmojiId": "5434131676760408297",
+      "gift_id": 900004,
+      "name": "Snoop Dogg",
+      "model": "Label Lord (1%)",
+      "asset": "TON",
+      "symbol": "Mushroom (0.5%)",
+      "backdrop": "Turquoise (1%)",
+      "availabilityIssued": 0,
+      "availabilityTotal": 0,
+      "backdropData": {},
+      "message_in_channel": 0,
+      "can_transfer_since": "2025-09-22T15:00:42.000Z",
+      "price": 4.9,
+      "dutchAuctionData": null,
+      "status": "forsale",
+      "limited": false,
+      "crafted": false,
+      "auction": null,
+      "export_at": "2026-07-26T16:23:15.000Z",
+      "premarketData": {}
+    },
+    {
+      "gift_num": 48498,
+      "customEmojiId": "5287346036933699345",
+      "gift_id": 900005,
+      "name": "Liberty Figure",
+      "model": "Diamond (3%)",
+      "asset": "TON",
+      "symbol": "Cat Mask (0.4%)",
+      "backdrop": "Feldgrau (1.5%)",
+      "availabilityIssued": 0,
+      "availabilityTotal": 0,
+      "backdropData": {},
+      "message_in_channel": 0,
+      "can_transfer_since": "2026-07-26T05:24:13.000Z",
+      "price": 6.5,
+      "dutchAuctionData": null,
+      "status": "forsale",
+      "limited": false,
+      "crafted": false,
+      "auction": null,
+      "export_at": "2026-08-13T15:23:39.000Z",
+      "premarketData": {}
+    }
+  ],
+  "filterStats": {
+    "status": "success",
+    "data": {
+      "Jolly Chimp_Snow Yeti": {
+        "floorPrice": 10,
+        "howMany": 13
+      },
+      "Jester Hat_Ghost": {
+        "floorPrice": 10.5,
+        "howMany": 3
+      },
+      "Pretty Posy_Tangerine": {
+        "floorPrice": 4.52,
+        "howMany": 13
+      },
+      "Lunar Snake_Rorschach": {
+        "floorPrice": 3.3,
+        "howMany": 13
+      },
+      "Rare Bird_Silver Wings": {
+        "floorPrice": 26,
+        "howMany": 3
+      },
+      "Stellar Rocket_Gunship": {
+        "floorPrice": 5.99,
+        "howMany": 13
+      },
+      "Santa Hat_Festive": {
+        "floorPrice": 8.5,
+        "howMany": 5
+      },
+      "Cupid Charm_Blossom": {
+        "floorPrice": 30,
+        "howMany": 4
+      },
+      "Sakura Flower_Lunaris": {
+        "floorPrice": 14.5,
+        "howMany": 7
+      },
+      "Love Candle_Passion": {
+        "floorPrice": 93.5,
+        "howMany": 2
+      },
+      "Crystal Ball_Tim Burton": {
+        "floorPrice": 12,
+        "howMany": 3
+      },
+      "Bunny Muffin_Sour Drop": {
+        "floorPrice": 16.7,
+        "howMany": 2
+      }
+    }
+  },
+  "balance": {
+    "status": "success",
+    "balance": 12.34,
+    "usdtBalance": 0,
+    "tonnelBalance": 0
+  },
+  "saleHistory": [
+    {
+      "gift_id": 910000,
+      "gift_num": 84274,
+      "gift_name": "Vice Cream",
+      "bidder": 0,
+      "price": 2.6965174129353238,
+      "timestamp": "2026-07-30T21:22:46.155Z",
+      "model": "Dreamland (3%)",
+      "symbol": "Coat of Arms (0.2%)",
+      "backdrop": "Cappuccino (1%)",
+      "asset": "TON",
+      "type": "INTERNAL_SALE"
+    },
+    {
+      "gift_id": 910001,
+      "gift_num": 89906,
+      "gift_name": "Input Key",
+      "price": 81.034,
+      "timestamp": "2026-07-30T21:21:47.809Z",
+      "model": "Ninja (1.5%)",
+      "symbol": "Koala (0.5%)",
+      "backdrop": "Black (1.5%)",
+      "asset": "TON",
+      "type": "BID"
+    },
+    {
+      "gift_id": 910002,
+      "gift_num": 64503,
+      "gift_name": "Liberty Figure",
+      "bidder": 0,
+      "price": 3.194029850746269,
+      "timestamp": "2026-07-30T21:21:19.671Z",
+      "model": "Girl Scout (2%)",
+      "symbol": "Sumerian Bird (0.5%)",
+      "backdrop": "Midnight Blue (1.2%)",
+      "asset": "TON",
+      "type": "INTERNAL_SALE"
+    },
+    {
+      "gift_id": 910003,
+      "gift_num": 89906,
+      "gift_name": "Input Key",
+      "price": 77.175,
+      "timestamp": "2026-07-30T21:21:13.622Z",
+      "model": "Ninja (1.5%)",
+      "symbol": "Koala (0.5%)",
+      "backdrop": "Black (1.5%)",
+      "asset": "TON",
+      "type": "BID"
+    },
+    {
+      "gift_id": 910004,
+      "gift_num": 89906,
+      "gift_name": "Input Key",
+      "price": 73.5,
+      "timestamp": "2026-07-30T21:20:41.082Z",
+      "model": "Ninja (1.5%)",
+      "symbol": "Koala (0.5%)",
+      "backdrop": "Black (1.5%)",
+      "asset": "TON",
+      "type": "BID"
+    },
+    {
+      "gift_id": 910005,
+      "gift_num": 316187,
+      "gift_name": "Desk Calendar",
+      "price": 52.502,
+      "timestamp": "2026-07-30T21:20:02.375Z",
+      "model": "TON Core (0.1%)",
+      "symbol": "Cobra (0.5%)",
+      "backdrop": "Silver Blue (2%)",
+      "asset": "TON",
+      "type": "BID"
+    }
+  ]
+}
