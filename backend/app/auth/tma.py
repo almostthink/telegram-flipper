@@ -313,7 +313,7 @@ class TmaAuth:
     def proxy_url(self) -> str:
         return vault.get("tg_proxy") or ""
 
-    def _new_client(self):
+    def _new_client(self, *, ipv6: bool = False):
         from pyrogram import Client
 
         from app import paths
@@ -324,6 +324,37 @@ class TmaAuth:
             api_hash=vault.get("tg_api_hash") or "",
             workdir=str(paths.data_dir()),
             proxy=parse_proxy(self.proxy_url()),
+            ipv6=ipv6,
+        )
+
+    async def _connect_any(self):
+        """Подключаемся к Telegram, пробуя оба стека адресов.
+
+        Pyrogram ходит не по домену, а на зашитые адреса дата-центров
+        (например 149.154.167.51) обычным TCP на порт 443. Когда провайдер
+        режет Telegram, режет он обычно диапазоны IPv4 — списки блокировок
+        до IPv6 доходят реже. Поэтому при неудаче по IPv4 пробуем IPv6:
+        это бесплатно и на части сетей снимает нужду в прокси.
+        """
+        errors: list[str] = []
+        for ipv6 in (False, True):
+            client = self._new_client(ipv6=ipv6)
+            try:
+                await asyncio.wait_for(client.connect(), timeout=LOGIN_TIMEOUT_SEC)
+            except (TimeoutError, OSError, ConnectionError) as exc:
+                errors.append(f"IPv{6 if ipv6 else 4}: {exc or 'нет ответа'}")
+                await _quietly_disconnect(client)
+                continue
+            if ipv6:
+                log.info("К Telegram удалось подключиться только по IPv6")
+            return client
+
+        raise RuntimeError(
+            "Telegram не отвечает ни по IPv4, ни по IPv6 — почти наверняка "
+            "его режет провайдер. Укажите прокси в поле ниже "
+            "(socks5://хост:порт) либо пользуйтесь ручным вводом токена: "
+            "на сбор данных и торговлю это никак не влияет, там обычный "
+            "HTTPS к площадке. Подробности: " + "; ".join(errors)
         )
 
     async def begin_login(self, phone: str) -> str:
@@ -332,19 +363,11 @@ class TmaAuth:
             raise RuntimeError("Сначала задайте api_id и api_hash")
 
         await self.cancel_login()
-        client = self._new_client()
+        client = await self._connect_any()
         try:
-            await asyncio.wait_for(client.connect(), timeout=LOGIN_TIMEOUT_SEC)
             sent = await asyncio.wait_for(
                 client.send_code(phone.strip()), timeout=LOGIN_TIMEOUT_SEC
             )
-        except TimeoutError as exc:
-            await _quietly_disconnect(client)
-            raise RuntimeError(
-                "Telegram не отвечает. Чаще всего это блокировка у провайдера — "
-                "укажите прокси в поле ниже (например socks5://127.0.0.1:9050) "
-                "или пользуйтесь ручным вводом токена."
-            ) from exc
         except Exception:
             await _quietly_disconnect(client)
             raise

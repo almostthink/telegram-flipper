@@ -203,3 +203,74 @@ async def test_locked_session_file_explains_itself(isolated_auth, tmp_path, monk
 
     detail = await isolated_auth.forget_session()
     assert "занят" in detail and "Перезапустите" in detail
+
+
+async def test_ipv6_is_tried_when_ipv4_is_blocked(isolated_auth, monkeypatch):
+    """Провайдеры режут Telegram по IPv4; списки блокировок до IPv6 доходят реже.
+
+    Pyrogram ходит на зашитые адреса дата-центров обычным TCP, поэтому
+    обойти блокировку иначе, чем сменой стека или прокси, нечем.
+    """
+    attempts: list[bool] = []
+
+    class FakeClient:
+        def __init__(self, ipv6: bool) -> None:
+            self.ipv6 = ipv6
+
+        async def connect(self):
+            attempts.append(self.ipv6)
+            if not self.ipv6:
+                raise OSError("Connection timed out")
+
+        async def disconnect(self):
+            return None
+
+    monkeypatch.setattr(isolated_auth, "_new_client", lambda *, ipv6=False: FakeClient(ipv6))
+
+    client = await isolated_auth._connect_any()
+
+    assert attempts == [False, True], "сначала IPv4, потом IPv6"
+    assert client.ipv6 is True
+
+
+async def test_both_stacks_blocked_explains_the_options(isolated_auth, monkeypatch):
+    class DeadClient:
+        def __init__(self, ipv6: bool) -> None:
+            self.ipv6 = ipv6
+
+        async def connect(self):
+            raise OSError("Connection timed out")
+
+        async def disconnect(self):
+            return None
+
+    monkeypatch.setattr(isolated_auth, "_new_client", lambda *, ipv6=False: DeadClient(ipv6))
+
+    with pytest.raises(RuntimeError) as exc:
+        await isolated_auth._connect_any()
+
+    text = str(exc.value)
+    assert "прокси" in text
+    # Пользователь должен понять, что торговли это не касается.
+    assert "торговлю" in text
+
+
+async def test_direct_connection_does_not_touch_ipv6(isolated_auth, monkeypatch):
+    """Работающий IPv4 — повод не трогать второй стек вовсе."""
+    attempts: list[bool] = []
+
+    class FakeClient:
+        def __init__(self, ipv6: bool) -> None:
+            self.ipv6 = ipv6
+
+        async def connect(self):
+            attempts.append(self.ipv6)
+
+        async def disconnect(self):
+            return None
+
+    monkeypatch.setattr(isolated_auth, "_new_client", lambda *, ipv6=False: FakeClient(ipv6))
+
+    await isolated_auth._connect_any()
+
+    assert attempts == [False]
