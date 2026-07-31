@@ -843,8 +843,48 @@ function HarCard({
               </span>
             </div>
           ))}
+
+          {result.trade_calls.length > 0 && <TradeCalls calls={result.trade_calls} />}
         </div>
       )}
+    </div>
+  )
+}
+
+function TradeCalls({
+  calls,
+}: {
+  calls: {
+    method: string
+    path: string
+    request: unknown
+    response: unknown
+  }[]
+}) {
+  const [copied, setCopied] = useState(false)
+  const text = JSON.stringify(calls, null, 2)
+
+  return (
+    <div className="mt-4 border-t border-ink-500 pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-neutral-300">Торговые запросы: {calls.length}</span>
+        <Button
+          onClick={() => {
+            void navigator.clipboard.writeText(text).then(() => setCopied(true))
+          }}
+        >
+          {copied ? 'Скопировано' : 'Скопировать'}
+        </Button>
+      </div>
+      <p className="mb-2 leading-relaxed text-neutral-500">
+        Пути площадка раскрывает своим кодом, а состав тела — нет: форма собирает
+        поля у себя. Вот они, разобранные из записи. Учётные данные вырезаны, длинные
+        значения обрезаны — это можно переслать, не пересылая сам HAR на сотни
+        мегабайт.
+      </p>
+      <pre className="max-h-80 overflow-auto rounded-lg bg-ink-900 p-3 font-mono text-[11px] leading-relaxed text-neutral-400">
+        {text}
+      </pre>
     </div>
   )
 }

@@ -409,6 +409,18 @@ async def import_har(market_name: str, file: UploadFile = File(...)) -> dict:
             for item in result.findings
         ],
         "skipped": result.skipped,
+        # Тела торговых запросов. В конфиг они не идут — тело нельзя
+        # «настроить», его закладывают в адаптер. Показываем, чтобы было
+        # что переслать разработчику вместо HAR на сотни мегабайт.
+        "trade_calls": [
+            {
+                "method": call.method,
+                "path": call.path,
+                "request": call.request,
+                "response": call.response,
+            }
+            for call in result.trade_calls[:40]
+        ],
     }
 
 

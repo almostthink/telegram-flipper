@@ -116,6 +116,10 @@ class HarImportResult:
     #: Хосты, чьи находки отброшены как посторонние. Показываем их, чтобы
     #: было видно, что именно не попало в конфиг и почему.
     rejected_hosts: set[str] = field(default_factory=set)
+    #: Торговые запросы с телами — то, ради чего HAR и записывают во
+    #: второй раз. В конфиг они не идут: тело нельзя «настроить», его
+    #: нужно заложить в адаптер. Поэтому их просто показываем.
+    trade_calls: list[TradeCall] = field(default_factory=list)
 
     def to_endpoints(self, fallback: MarketEndpoints) -> MarketEndpoints:
         """Накладываем найденное поверх текущей конфигурации."""
@@ -131,6 +135,105 @@ class HarImportResult:
             # с массивами. Затирать рабочее значение пустотой нельзя.
             cdn_url=fallback.cdn_url,
         )
+
+
+#: Пути торговых действий. Их тела и есть то, что нельзя восстановить из
+#: кода мини-аппа: форма собирает поля у себя, а в бандл попадает только
+#: адрес. Поэтому единственный способ узнать состав тела — увидеть его в
+#: записи трафика.
+TRADE_KEYWORDS = (
+    "order",
+    "buy",
+    "sale",
+    "sell",
+    "bid",
+    "auction",
+    "offer",
+    "change-price",
+    "delist",
+    "withdraw",
+    "transfer",
+)
+
+#: Ключи, значения которых из HAR наружу не выпускаем ни при каких
+#: обстоятельствах: это учётные данные, а не параметры сделки.
+SECRET_KEYS = frozenset(
+    {"authorization", "cookie", "authdata", "user_auth", "initdata", "signature", "hash"}
+)
+
+#: Приметы сырого initData в значении. Он приходит одной строкой, и
+#: вырезать его надо целиком, а не по ключу: имя ключа бывает любым.
+INIT_DATA_MARKS = ("query_id=", "auth_date=")
+
+#: Длиннее этого строку в теле обрезаем. Так из выдачи уходят base64
+#: с картинками, ради которых HAR и раздувается до сотен мегабайт.
+MAX_VALUE_CHARS = 200
+
+
+@dataclass(slots=True)
+class TradeCall:
+    """Один торговый запрос из записи: что отправили и что ответили."""
+
+    method: str
+    path: str
+    request: Any
+    response: Any
+
+
+def is_trade_action(method: str, path: str) -> bool:
+    """Похож ли запрос на торговое действие, а не на чтение.
+
+    Читающие запросы бывают и POST — у MRKT так устроен список лотов, —
+    поэтому одного метода мало, нужен и путь.
+    """
+    if method.upper() not in ("POST", "PUT", "PATCH", "DELETE"):
+        return False
+    lowered = path.lower()
+    if "auth" in lowered:
+        # Обмен initData на токен — учётные данные целиком, не сделка.
+        return False
+    return any(keyword in lowered for keyword in TRADE_KEYWORDS)
+
+
+def sanitize(value: Any, depth: int = 0) -> Any:
+    """Убираем из тела всё, что является доступом, а не параметром сделки.
+
+    Тела торговых запросов приходится показывать человеку и пересылать —
+    значит, в них не должно остаться ничего, чем можно воспользоваться.
+    """
+    if depth > 6:
+        return "…"
+
+    if isinstance(value, dict):
+        clean = {}
+        for key, item in value.items():
+            if str(key).lower().replace("-", "").replace("_", "") in {
+                name.replace("_", "") for name in SECRET_KEYS
+            }:
+                clean[key] = "<вырезано>"
+            else:
+                clean[key] = sanitize(item, depth + 1)
+        return clean
+
+    if isinstance(value, list):
+        return [sanitize(item, depth + 1) for item in value[:20]]
+
+    if isinstance(value, str):
+        if any(mark in value for mark in INIT_DATA_MARKS):
+            return "<initData вырезан>"
+        if len(value) > MAX_VALUE_CHARS:
+            return value[:60] + f"…(обрезано, всего {len(value)} символов)"
+    return value
+
+
+def _body(raw: Any) -> Any:
+    """Тело запроса или ответа: разобранным JSON, если это возможно."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return sanitize(json.loads(raw))
+    except (json.JSONDecodeError, ValueError):
+        return sanitize(raw)
 
 
 def classify(path: str) -> str | None:
@@ -209,7 +312,7 @@ def parse_har(raw: bytes | str, *, host_filter: str | None = None) -> HarImportR
             fallback.matched_by_fallback = True
             return fallback
 
-    if not result.findings:
+    if not result.findings and not result.trade_calls:
         hosts = ", ".join(sorted(seen_hosts)[:8]) or "нет JSON-ответов вовсе"
         raise ValueError(
             "В HAR не найдено ни одного подходящего JSON-запроса. "
@@ -247,6 +350,26 @@ def _scan_entries(entries: list, *, host_filter: str | None) -> HarImportResult:
             # аналитику. Иначе в выдачу попадут их служебные ответы.
             continue
 
+        method = str(request.get("method", "GET")).upper()
+
+        # Торговые действия собираем до проверки типа ответа: на покупку
+        # площадка может ответить пустотой, и по mime такой ответ не
+        # отличить от картинки — а тело запроса при этом самое ценное.
+        if is_trade_action(method, parsed.path):
+            result.trade_calls.append(
+                TradeCall(
+                    method=method,
+                    path=parsed.path,
+                    request=_body((request.get("postData") or {}).get("text")),
+                    response=_body((response.get("content") or {}).get("text")),
+                )
+            )
+            # В классификацию торговые действия не пускаем. Путь
+            # /gifts/buy содержит «gift», и без этой отсечки покупка
+            # записалась бы в конфиг как адрес списка лотов — то есть
+            # запись с торговлей ломала бы сбор данных.
+            continue
+
         # Статику и не-JSON пропускаем: нас интересует только API.
         mime = str((response.get("content") or {}).get("mimeType", ""))
         if "json" not in mime.lower():
@@ -279,7 +402,7 @@ def _scan_entries(entries: list, *, host_filter: str | None) -> HarImportResult:
         candidate = HarFinding(
             endpoint=endpoint,
             path=parsed.path,
-            method=str(request.get("method", "GET")).upper(),
+            method=method,
             json_path=json_path,
             sample_count=count,
             base_url=base_url,

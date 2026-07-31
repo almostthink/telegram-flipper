@@ -424,6 +424,14 @@ export const api = {
       rejected_hosts: string[]
       found: { endpoint: string; path: string; method: string; records_in_sample: number }[]
       skipped: number
+      // Тела торговых запросов: их нельзя восстановить из кода мини-аппа,
+      // и в конфиг они не идут — их закладывают в адаптер.
+      trade_calls: {
+        method: string
+        path: string
+        request: unknown
+        response: unknown
+      }[]
     }>(`/endpoints/${market}/import-har`, { method: 'POST', body: form })
   },
   resetEndpoints: (market: string) =>

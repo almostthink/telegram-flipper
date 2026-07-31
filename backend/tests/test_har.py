@@ -188,3 +188,126 @@ def test_rejected_hosts_are_reported_on_fallback():
     assert result.base_url == "https://portal-market.com"
     assert "https://config.ton.org" in result.rejected_hosts
     assert "balance" not in {item.endpoint for item in result.findings}
+
+
+# --- Тела торговых запросов -----------------------------------------------
+#
+# Второй смысл HAR: пути мини-апп раскрывает своим кодом, а состав тела —
+# нет, форма собирает поля у себя. Увидеть тело можно только в записи, и
+# отдать его нужно так, чтобы вместе с ним не уехали учётные данные.
+
+
+def post(url: str, body: dict, response: dict | list | None = None, method: str = "POST"):
+    return {
+        "request": {
+            "url": url,
+            "method": method,
+            "headers": [{"name": "Authorization", "value": "secret-token"}],
+            "postData": {"mimeType": "application/json", "text": json.dumps(body)},
+        },
+        "response": {
+            "content": {
+                "mimeType": "application/json",
+                "text": json.dumps(response if response is not None else {"ok": True}),
+            }
+        },
+    }
+
+
+def test_trade_action_is_recognised_by_path_and_method():
+    from app.adapters.har import is_trade_action
+
+    assert is_trade_action("POST", "/api/v1/orders/create")
+    assert is_trade_action("POST", "/api/v1/gifts/buy")
+    assert is_trade_action("POST", "/api/auction/bid")
+    # Читающие запросы бывают и POST — у MRKT так устроен список лотов.
+    assert not is_trade_action("POST", "/api/v1/gifts")
+    assert not is_trade_action("GET", "/api/v1/orders/all-collection-top")
+    # Обмен initData на токен — учётные данные целиком, а не сделка.
+    assert not is_trade_action("POST", "/api/v1/auth")
+
+
+def test_trade_bodies_are_extracted():
+    result = parse_har(
+        har(
+            entry("https://api.tgmrkt.io/api/v1/gifts", body={"gifts": [{"id": 1}]}),
+            post(
+                "https://api.tgmrkt.io/api/v1/orders/create",
+                {"collectionId": "abc", "price": 1500000000, "amount": 2},
+                {"orderId": "O-1"},
+            ),
+        ),
+        host_filter="tgmrkt",
+    )
+
+    assert len(result.trade_calls) == 1
+    call = result.trade_calls[0]
+    assert call.path == "/api/v1/orders/create"
+    assert call.request == {"collectionId": "abc", "price": 1500000000, "amount": 2}
+    assert call.response == {"orderId": "O-1"}
+
+
+def test_extracted_bodies_carry_no_credentials():
+    """Тела показываются человеку и пересылаются — доступа в них быть не должно."""
+    result = parse_har(
+        har(
+            post(
+                "https://gifts2.tonnel.network/api/auction/bid",
+                {
+                    "authData": "query_id=AAA&user=%7B%22id%22%3A1%7D&hash=abc",
+                    "gift_id": 77,
+                    "amount": 4.2,
+                },
+            )
+        ),
+        host_filter="tonnel",
+    )
+
+    body = result.trade_calls[0].request
+    assert body["gift_id"] == 77, "параметры сделки должны сохраниться"
+    assert "query_id" not in json.dumps(body, ensure_ascii=False)
+    assert "hash=abc" not in json.dumps(body, ensure_ascii=False)
+
+
+def test_init_data_is_cut_wherever_it_hides():
+    from app.adapters.har import sanitize
+
+    cleaned = sanitize({"payload": {"any_name": "auth_date=1700000000&hash=zz"}})
+    assert cleaned["payload"]["any_name"] == "<initData вырезан>"
+
+
+def test_huge_values_are_trimmed():
+    """Ради них HAR и раздувается: base64 с картинкой в теле запроса."""
+    from app.adapters.har import sanitize
+
+    cleaned = sanitize({"photo": "A" * 5000})
+    assert len(cleaned["photo"]) < 200
+    assert "обрезано" in cleaned["photo"]
+
+
+def test_har_with_only_trade_actions_is_not_rejected():
+    """Запись второго захода может состоять из одних действий — это нормально."""
+    result = parse_har(
+        har(post("https://api.tgmrkt.io/api/v1/gifts/buy", {"ids": ["G1"]})),
+        host_filter="tgmrkt",
+    )
+    assert result.trade_calls
+    assert result.findings == []
+
+
+def test_buy_never_overwrites_the_listings_path():
+    """Путь /gifts/buy содержит «gift» — и однажды подменил бы список лотов.
+
+    Тогда импорт HAR, записанного во время торговли, ломал бы сбор
+    данных: приложение ходило бы за списком подарков на адрес покупки.
+    """
+    result = parse_har(
+        har(
+            entry("https://api.tgmrkt.io/api/v1/gifts", body={"gifts": [{"id": 1}]}),
+            post("https://api.tgmrkt.io/api/v1/gifts/buy", {"ids": ["G1"]}),
+        ),
+        host_filter="tgmrkt",
+    )
+
+    listings = next(f for f in result.findings if f.endpoint == "listings")
+    assert listings.path == "/api/v1/gifts"
