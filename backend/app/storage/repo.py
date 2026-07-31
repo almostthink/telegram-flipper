@@ -428,6 +428,23 @@ async def latest_floor(session: AsyncSession, collection: str) -> float | None:
     return (await session.execute(query)).scalar()
 
 
+async def floor_by_market(session: AsyncSession, collection: str) -> dict[str, float]:
+    """Свежий флор коллекции по каждой площадке отдельно.
+
+    Минимума по всем площадкам недостаточно: разница между ними и есть
+    повод перенести подарок с одной на другую. Берём тот же часовой срез,
+    что и ``latest_floor``, — сравнивать можно только одновременные замеры.
+    """
+    cutoff = utcnow() - timedelta(hours=1)
+    query = (
+        select(FloorSnapshot.market, func.min(FloorSnapshot.floor_ton))
+        .where(FloorSnapshot.collection == collection, FloorSnapshot.captured_at >= cutoff)
+        .group_by(FloorSnapshot.market)
+    )
+    rows = (await session.execute(query)).all()
+    return {market: floor for market, floor in rows if floor and floor > 0}
+
+
 async def seed_previous_day_floors(
     session: AsyncSession, market: str, floors: dict[str, float]
 ) -> int:

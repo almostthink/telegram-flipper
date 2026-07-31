@@ -109,8 +109,15 @@ function OpenRow({
   return (
     <tr className={overdue ? 'bg-warn/5' : undefined}>
       <td className="px-4 py-2.5">
-        <div className="text-neutral-200">{position.collection}</div>
-        <div className="text-xs text-neutral-600">{position.model ?? '—'}</div>
+        <div className="text-neutral-200">
+          {position.collection}
+          {position.frozen && (
+            <span className="badge ml-2 bg-ink-500 text-neutral-300">заморожена</span>
+          )}
+        </div>
+        <div className="text-xs text-neutral-600">
+          {position.frozen ? 'ждёт переноса вручную' : (position.model ?? '—')}
+        </div>
       </td>
       <td className="px-4 py-2.5 font-mono text-neutral-400">{ton(position.buy_price_ton)}</td>
       <td className="px-4 py-2.5 font-mono text-neutral-200">{ton(position.ask_price_ton)}</td>
@@ -133,7 +140,22 @@ function OpenRow({
             onChange={(event) => setPrice(event.target.value)}
             className="w-20 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 text-right font-mono text-xs text-neutral-200"
           />
-          <Button onClick={() => void onAct(() => api.relist(position.id, Number(price)))}>
+          {/* Заморозка: подарок остаётся за нами, движок его не трогает.
+              Нужна ровно для переноса на другую площадку руками. */}
+          <Button
+            title={
+              position.frozen
+                ? 'Вернуть позицию движку — продаётся там, где куплена'
+                : 'Движок не будет её выставлять и переоценивать, лот снимется с продажи'
+            }
+            onClick={() => void onAct(() => api.freeze(position.id, !position.frozen))}
+          >
+            {position.frozen ? 'Разморозить' : 'Заморозить'}
+          </Button>
+          <Button
+            disabled={position.frozen}
+            onClick={() => void onAct(() => api.relist(position.id, Number(price)))}
+          >
             {position.status === 'open' ? 'Выставить' : 'Цена'}
           </Button>
           <Button

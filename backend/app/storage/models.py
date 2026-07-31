@@ -254,6 +254,10 @@ class Position(Base):
 
     status: Mapped[str] = mapped_column(String(16), default="open", index=True)
     paper: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    #: Заморозка: движок позицию не трогает — ни выставляет, ни снижает
+    #: цену. Так человек забирает подарок себе, чтобы перенести его на
+    #: другую площадку руками. Без заморозки лот продаётся там, где куплен.
+    frozen: Mapped[bool] = mapped_column(Boolean, default=False)
 
     trades: Mapped[list[TradeLog]] = relationship(back_populates="position")
 

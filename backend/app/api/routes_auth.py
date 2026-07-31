@@ -186,6 +186,25 @@ async def telegram_logout() -> dict:
     return {"ok": True, "detail": await auth.forget_session()}
 
 
+@router.post("/notify/test")
+async def notify_test() -> dict:
+    """Пробное уведомление — чтобы не выяснять на первой же сделке.
+
+    Отправляем с ожиданием, а не в фоне: смысл проверки в том, чтобы
+    увидеть ошибку сразу, если она есть.
+    """
+    from app.api.deps import get_engine
+
+    try:
+        await get_engine().notifier.send(
+            "Проверка связи. Уведомления о покупках и ценах площадок будут "
+            "приходить сюда."
+        )
+    except Exception as exc:  # noqa: BLE001 — причину показываем пользователю
+        raise HTTPException(status_code=400, detail=_readable(exc)) from exc
+    return {"ok": True, "detail": "Отправлено — проверьте Telegram"}
+
+
 class ProxyRequest(BaseModel):
     url: str
 

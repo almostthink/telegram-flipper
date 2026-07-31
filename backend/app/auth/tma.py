@@ -370,6 +370,28 @@ class TmaAuth:
             "HTTPS к площадке. Подробности: " + "; ".join(errors)
         )
 
+    async def send_message(self, chat: str, text: str) -> None:
+        """Отправляем сообщение своей же сессией Telegram.
+
+        Отдельный бот тут был бы лишней сущностью: пришлось бы заводить
+        токен, находить chat_id и держать ещё одно подключение. Сессия уже
+        есть — ею и пользуемся, а ``me`` означает «Избранное».
+        """
+        if not self.has_session():
+            raise RuntimeError(
+                "Вход в Telegram не выполнен — уведомления отправлять некому"
+            )
+        if not self.userbot_available():
+            raise RuntimeError("Pyrogram недоступен в этой сборке")
+
+        client = await self._connect_any()
+        try:
+            await asyncio.wait_for(
+                client.send_message(chat or "me", text), timeout=LOGIN_TIMEOUT_SEC
+            )
+        finally:
+            await _quietly_disconnect(client)
+
     async def begin_login(self, phone: str) -> str:
         """Шаг первый: просим Telegram прислать код."""
         if not self.has_credentials():

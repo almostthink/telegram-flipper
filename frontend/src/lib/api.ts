@@ -183,6 +183,8 @@ export interface Position {
   sold_at: string | null
   reason: string | null
   paper: boolean
+  //: Заморожена — движок её не трогает, человек переносит подарок сам.
+  frozen: boolean
 }
 
 export interface TradingStats {
@@ -285,6 +287,17 @@ export interface AppConfig {
     tick_ton: number
     interval_sec: number
   }
+  transfer: {
+    stars_per_gift: number
+    star_price_ton: number
+  }
+  notify: {
+    enabled: boolean
+    chat: string
+    on_buy: boolean
+    on_sell: boolean
+    min_spread: number
+  }
   risk: Record<string, number | string[]>
   sell: Record<string, number>
   marketplaces: Record<
@@ -345,6 +358,11 @@ export const api = {
     request<{ ok: boolean; detail: string }>('/positions/buy', json({ market, listing_id: listingId })),
   sell: (id: number, priceTon: number) =>
     request<{ ok: boolean; detail: string }>(`/positions/${id}/sell`, json({ price_ton: priceTon })),
+  freeze: (id: number, frozen: boolean) =>
+    request<{ ok: boolean; detail: string }>(
+      `/positions/${id}/freeze?frozen=${frozen}`,
+      { method: 'POST' },
+    ),
   relist: (id: number, priceTon: number) =>
     request<{ ok: boolean; detail: string }>(`/positions/${id}/relist`, json({ price_ton: priceTon })),
 
@@ -374,6 +392,8 @@ export const api = {
     ),
   telegramProxy: (url: string) =>
     request<{ ok: boolean; detail: string }>('/auth/proxy', json({ url })),
+  notifyTest: () =>
+    request<{ ok: boolean; detail: string }>('/notify/test', { method: 'POST' }),
   telegramLogout: () =>
     request<{ ok: boolean; detail: string }>('/auth/telegram', { method: 'DELETE' }),
 

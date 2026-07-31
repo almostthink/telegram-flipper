@@ -30,9 +30,10 @@ from app.api.ws import hub
 from app.config import Settings
 from app.domain import Market, utcnow
 from app.ingest.scanner import Scanner
+from app.notify import Notifier
 from app.storage import repo
 from app.storage.db import session_scope
-from app.storage.models import Position
+from app.storage.models import Position, TradeLog
 from app.trading import orders as orders_mod
 from app.trading.executor import Executor
 from app.trading.orders import OrderPolicy
@@ -118,7 +119,8 @@ class TradingEngine:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.scanner = Scanner(settings)
-        self.executor = Executor(settings)
+        self.notifier = Notifier(settings)
+        self.executor = Executor(settings, notifier=self.notifier)
         self.risk = RiskManager(settings.risk)
         self.wallet = BalanceTracker(settings)
         self.last_signals: list[Signal] = []
@@ -134,6 +136,7 @@ class TradingEngine:
         self.scanner.settings = settings
         self.executor.settings = settings
         self.wallet.settings = settings
+        self.notifier.settings = settings
         self.risk.update_limits(settings.risk)
 
     # --- Основной цикл ---------------------------------------------------
@@ -487,6 +490,7 @@ class TradingEngine:
         self.risk.register_buy(listing.collection, listing.price_ton)
         self.risk.register_success()
         self.wallet.reserve(listing.market, listing.price_ton)
+        await self._notify_buy(signal)
         await hub.broadcast(
             "position_opened",
             {
@@ -496,6 +500,93 @@ class TradingEngine:
             },
         )
         return True, result.detail
+
+    async def _notify_buy(self, signal: Signal) -> None:
+        """Сообщение о покупке с ценами по всем площадкам.
+
+        Цены здесь не украшение: решение о переносе принимает человек, и
+        без них решать не из чего. Сбой уведомления покупку не отменяет —
+        она уже состоялась.
+        """
+        listing = signal.listing
+        try:
+            async with session_scope() as session:
+                floors = await repo.floor_by_market(session, listing.collection)
+        except Exception:  # noqa: BLE001 — уведомление не должно ронять цикл
+            log.debug("Не удалось собрать цены площадок для уведомления", exc_info=True)
+            floors = {}
+
+        self.notifier.buy(
+            collection=listing.collection,
+            model=listing.model,
+            number=listing.number,
+            market=listing.market,
+            price_ton=listing.price_ton,
+            fair_ton=signal.fair.value_ton,
+            roi=signal.net_roi,
+            floors=floors,
+            paper=self.settings.paper_mode,
+        )
+
+    # --- Заморозка -------------------------------------------------------
+
+    async def set_frozen(self, position_id: int, frozen: bool) -> tuple[bool, str]:
+        """Заморозка позиции: движок её больше не трогает.
+
+        Смысл в переносе на другую площадку. Перенести можно только то,
+        что не выставлено на продажу, поэтому при заморозке выставленный
+        лот снимается с продажи — иначе человек пойдёт переносить подарок
+        и упрётся в отказ площадки.
+        """
+        async with session_scope() as session:
+            position = await session.get(Position, position_id)
+            if position is None:
+                return False, "позиция не найдена"
+            if position.status not in ("open", "listed"):
+                return False, "позиция уже закрыта"
+            if position.frozen == frozen:
+                return True, "заморожена" if frozen else "разморожена"
+
+            market = position.market
+            listing_id = position.listing_id
+            was_listed = position.status == "listed"
+
+        detail = ""
+        if frozen and was_listed and listing_id and not self.settings.paper_mode:
+            adapter = registry.build_adapter(Market(market), self.settings)
+            try:
+                async with adapter:
+                    await adapter.delist(listing_id)
+                detail = " и снята с продажи"
+            except (MarketplaceError, NotImplementedError) as exc:
+                # Не молчим: подарок остался выставленным, и перенести его
+                # не выйдет, пока человек не снимет лот сам.
+                return False, f"снять с продажи не удалось: {exc}"
+
+        async with session_scope() as session:
+            position = await session.get(Position, position_id)
+            if position is None:
+                return False, "позиция не найдена"
+            position.frozen = frozen
+            if frozen and was_listed:
+                position.status = "open"
+                position.listing_id = None
+                position.ask_price_ton = None
+            session.add(
+                TradeLog(
+                    position_id=position_id,
+                    action="freeze" if frozen else "unfreeze",
+                    market=market,
+                    detail=(
+                        "заморожена для переноса вручную"
+                        if frozen
+                        else "разморожена — продаётся как обычно"
+                    ),
+                    paper=self.settings.paper_mode,
+                )
+            )
+
+        return True, ("заморожена" + detail) if frozen else "разморожена"
 
     async def buy_manually(self, listing_id: str, market: str) -> tuple[bool, str]:
         """Покупка по кнопке из интерфейса.
@@ -534,8 +625,15 @@ class TradingEngine:
                 ).scalars()
             )
 
+        await self._alert_spreads(positions)
+
         for position in positions:
             try:
+                if position.frozen:
+                    # Замороженную позицию человек забрал себе: она ждёт
+                    # переноса на другую площадку. Выставить её сейчас —
+                    # значит продать ровно то, что просили не продавать.
+                    continue
                 if position.status == "open":
                     if await self._list_new(position):
                         report.listed += 1
@@ -544,6 +642,40 @@ class TradingEngine:
             except Exception as exc:  # noqa: BLE001
                 log.exception("Ошибка сопровождения позиции %d", position.id)
                 report.errors.append(f"позиция {position.id}: {exc}")
+
+    async def _alert_spreads(self, positions: list[Position]) -> None:
+        """Сообщаем, если held-позицию выгоднее продать на другой площадке.
+
+        Само приложение перенести подарок не может — это делается руками,
+        через ЛС бота. Значит, единственное, что оно должно сделать, —
+        вовремя сказать об этом. Повтор гасится в самом уведомителе:
+        разница держится часами, а сообщение о ней осмысленно один раз.
+        """
+        if not self.settings.notify.enabled or not positions:
+            return
+
+        collections = {position.collection for position in positions if not position.frozen}
+        if not collections:
+            return
+
+        try:
+            async with session_scope() as session:
+                floors = {
+                    collection: await repo.floor_by_market(session, collection)
+                    for collection in collections
+                }
+        except Exception:  # noqa: BLE001 — уведомления не роняют цикл
+            log.debug("Не удалось собрать цены площадок", exc_info=True)
+            return
+
+        for position in positions:
+            if position.frozen:
+                continue
+            self.notifier.spread(
+                collection=position.collection,
+                market=position.market,
+                floors=floors.get(position.collection, {}),
+            )
 
     async def _list_new(self, position: Position) -> bool:
         """Выставляем свежекупленную позицию с наценкой."""

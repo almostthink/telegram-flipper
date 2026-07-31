@@ -39,8 +39,12 @@ class ExecutionResult:
 class Executor:
     """Покупка, выставление на продажу и переоценка."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, notifier=None) -> None:
         self.settings = settings
+        #: Уведомления о закрытии сделки. Живут здесь, а не в движке,
+        #: потому что закрытие проходит через executor всеми путями:
+        #: симуляцией, кнопкой в интерфейсе и сбросом по времени.
+        self.notifier = notifier
 
     @property
     def paper(self) -> bool:
@@ -220,11 +224,23 @@ class Executor:
             )
             pnl = stored.net_pnl_ton
             collection = stored.collection
+            market = stored.market
+            buy_price = stored.buy_price_ton
+            paper = stored.paper
 
         log.info(
             "Позиция %d закрыта: %s за %.2f TON, чистыми %+.3f",
             position_id, collection, sell_price_ton, pnl,
         )
+        if self.notifier is not None:
+            self.notifier.sold(
+                collection=collection,
+                market=market,
+                buy_ton=buy_price,
+                sell_ton=sell_price_ton,
+                pnl_ton=pnl,
+                paper=paper,
+            )
         return ExecutionResult(True, f"продано, чистыми {pnl:+.3f} TON", position_id)
 
     # --- Симуляция продажи ------------------------------------------------

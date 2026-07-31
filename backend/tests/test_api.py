@@ -77,6 +77,23 @@ def test_config_roundtrip(client):
     client.put(f"{API_PREFIX}/config", json={"analytics": {"min_roi": original_roi}})
 
 
+def test_notify_settings_survive_a_partial_patch(client):
+    """Правка одного поля не должна сбрасывать соседние — их правил человек."""
+    body = client.put(f"{API_PREFIX}/config", json={"notify": {"chat": "@me_alerts"}}).json()
+
+    assert body["notify"]["chat"] == "@me_alerts"
+    assert body["notify"]["on_buy"] is True
+    assert body["transfer"]["stars_per_gift"] == 25
+
+    client.put(f"{API_PREFIX}/config", json={"notify": {"chat": "me"}})
+
+
+def test_freezing_a_missing_position_is_reported(client):
+    response = client.post(f"{API_PREFIX}/positions/999999/freeze?frozen=true")
+    assert response.status_code == 400
+    assert "не найдена" in response.json()["detail"]
+
+
 def test_websocket_echo(client):
     with client.websocket_connect("/api/ws") as ws:
         ws.send_text("ping")

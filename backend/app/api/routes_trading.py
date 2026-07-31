@@ -104,6 +104,19 @@ async def sell(position_id: int, request: SellRequest) -> dict:
     return {"ok": True, "detail": result.detail}
 
 
+@router.post("/positions/{position_id}/freeze")
+async def freeze(position_id: int, frozen: bool = Query(default=True)) -> dict:
+    """Заморозка позиции: движок её не выставляет и не переоценивает.
+
+    Так подарок забирают себе — чтобы перенести на другую площадку
+    вручную. Пока позиция не заморожена, она продаётся там, где куплена.
+    """
+    ok, detail = await get_engine().set_frozen(position_id, frozen)
+    if not ok:
+        raise HTTPException(status_code=400, detail=detail)
+    return {"ok": True, "detail": detail}
+
+
 @router.post("/positions/{position_id}/relist")
 async def relist(position_id: int, request: SellRequest) -> dict:
     async with session_scope() as session:
@@ -192,4 +205,5 @@ def _position_dict(row: Position) -> dict:
         "sold_at": row.sold_at.isoformat() if row.sold_at else None,
         "reason": row.reason,
         "paper": row.paper,
+        "frozen": row.frozen,
     }

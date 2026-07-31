@@ -60,12 +60,15 @@ export function Button({
   variant = 'default',
   disabled,
   type = 'button',
+  title,
 }: {
   children: ReactNode
   onClick?: () => void
   variant?: 'default' | 'primary' | 'danger'
   disabled?: boolean
   type?: 'button' | 'submit'
+  //: Подсказка при наведении — там, где короткой надписи мало.
+  title?: string
 }) {
   const styles = {
     default: 'bg-ink-700 text-neutral-300 hover:bg-ink-600',
@@ -80,6 +83,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${styles}`}
     >
       {children}

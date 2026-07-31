@@ -98,6 +98,12 @@ export default function Settings() {
         <UserbotCard auth={auth} onReport={report} />
       </div>
 
+      {config.data && (
+        <div className="mb-4">
+          <NotifyCard config={config.data} onPatch={patch} onReport={report} />
+        </div>
+      )}
+
       <HarCard markets={markets} onReport={report} onDone={() => void auth.reload()} />
 
       {config.data && (
@@ -873,6 +879,116 @@ function BackdropList({
         >
           Сохранить фоны
         </Button>
+      </div>
+    </div>
+  )
+}
+
+function NotifyCard({
+  config,
+  onPatch,
+  onReport,
+}: {
+  config: NonNullable<Awaited<ReturnType<typeof api.config>>>
+  onPatch: (body: Record<string, unknown>) => Promise<void>
+  onReport: (tone: 'info' | 'error' | 'warn', text: string) => void
+}) {
+  const notify = config.notify
+  const transfer = config.transfer
+  const [chat, setChat] = useState(notify.chat)
+
+  return (
+    <div className="card">
+      <div className="mb-1 flex items-center justify-between">
+        <h2 className="text-sm font-medium text-neutral-300">Уведомления в Telegram</h2>
+        <div className="flex gap-2">
+          <Button
+            onClick={() =>
+              void api
+                .notifyTest()
+                .then((r) => onReport('info', r.detail))
+                .catch((e: Error) => onReport('error', e.message))
+            }
+          >
+            Проверить
+          </Button>
+          <Button
+            variant={notify.enabled ? 'default' : 'primary'}
+            onClick={() => void onPatch({ notify: { enabled: !notify.enabled } })}
+          >
+            {notify.enabled ? 'Выключить' : 'Включить'}
+          </Button>
+        </div>
+      </div>
+      <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+        Приходят вашей же сессией Telegram — отдельный бот не нужен, но нужен
+        выполненный вход выше. В сообщении о покупке идут цены коллекции по всем
+        площадкам: решение о переносе принимаете вы, и без цен его не принять.
+        <br />
+        Перенос делается вручную — через ЛС бота площадки, и стоит{' '}
+        {transfer.stars_per_gift} ⭐. Чтобы движок не продал подарок, пока вы его
+        переносите, нажмите <span className="text-neutral-300">«Заморозить»</span>{' '}
+        в Инвентаре. Без заморозки лот продаётся там, где куплен.
+      </p>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm text-neutral-400">Куда слать</span>
+          <div className="flex gap-2">
+            <input
+              value={chat}
+              onChange={(event) => setChat(event.target.value)}
+              placeholder="me"
+              className="w-40 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 font-mono text-sm text-neutral-200"
+            />
+            <Button
+              disabled={chat === notify.chat}
+              onClick={() => void onPatch({ notify: { chat: chat.trim() || 'me' } })}
+            >
+              OK
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-neutral-600">
+          <span className="font-mono">me</span> — «Избранное». Можно указать
+          @username или id чата.
+        </p>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={notify.on_buy ? 'primary' : 'default'}
+            onClick={() => void onPatch({ notify: { on_buy: !notify.on_buy } })}
+          >
+            О покупках: {notify.on_buy ? 'да' : 'нет'}
+          </Button>
+          <Button
+            variant={notify.on_sell ? 'primary' : 'default'}
+            onClick={() => void onPatch({ notify: { on_sell: !notify.on_sell } })}
+          >
+            О продажах: {notify.on_sell ? 'да' : 'нет'}
+          </Button>
+        </div>
+
+        <Field
+          label="Сообщать о разнице площадок от"
+          value={notify.min_spread}
+          onSave={(value) => void onPatch({ notify: { min_spread: value } })}
+        />
+        <Field
+          label="Звёзд за перенос"
+          value={transfer.stars_per_gift}
+          onSave={(value) => void onPatch({ transfer: { stars_per_gift: value } })}
+        />
+        <Field
+          label="Цена звезды в TON"
+          value={transfer.star_price_ton}
+          onSave={(value) => void onPatch({ transfer: { star_price_ton: value } })}
+        />
+        <p className="text-xs text-neutral-600">
+          Перенос обходится в{' '}
+          {(transfer.stars_per_gift * transfer.star_price_ton).toFixed(2)} TON — эта
+          сумма показывается в уведомлении рядом с разницей цен.
+        </p>
       </div>
     </div>
   )

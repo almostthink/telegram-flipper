@@ -66,6 +66,46 @@ class AnalyticsConfig(BaseModel):
     gas_ton: float = Field(default=0.08, ge=0)
 
 
+class TransferConfig(BaseModel):
+    """Перенос подарка между площадками — вручную, через ЛС бота.
+
+    Сам перенос приложение не делает: подарок выводится в Telegram и
+    отправляется боту другой площадки личным сообщением, а Telegram берёт
+    за передачу уникального подарка звёзды. Здесь только цена вопроса —
+    чтобы в уведомлении было видно, окупает ли разница площадок переезд.
+
+    Курс звезды меняется, поэтому он в настройке, а не зашит в код.
+    """
+
+    #: Сколько звёзд Telegram берёт за передачу одного подарка.
+    stars_per_gift: int = Field(default=25, ge=0)
+    #: Во сколько TON обходится одна звезда.
+    star_price_ton: float = Field(default=0.01, ge=0)
+
+    @property
+    def cost_ton(self) -> float:
+        """Во что обходится один перенос."""
+        return round(self.stars_per_gift * self.star_price_ton, 4)
+
+
+class NotifyConfig(BaseModel):
+    """Уведомления в Telegram — своей же сессией, без отдельного бота.
+
+    Смысл их один: решение о переносе подарка на другую площадку принимает
+    человек, а принять его можно только зная цены. Поэтому в сообщении о
+    покупке сразу идут цены коллекции по всем площадкам.
+    """
+
+    enabled: bool = True
+    #: Куда слать. ``me`` — «Избранное», свой же чат с самим собой.
+    chat: str = "me"
+    on_buy: bool = True
+    on_sell: bool = True
+    #: С какой разницы между площадками стоит сообщать. Доля от цены на
+    #: своей площадке: 0.05 — чужая дороже на 5%.
+    min_spread: float = Field(default=0.05, ge=0, le=1)
+
+
 class CollectibleConfig(BaseModel):
     """Коллекционные признаки: номер выпуска и ценные фоны.
 
@@ -194,6 +234,8 @@ class Settings(BaseSettings):
     # --- Секции ---
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
     collectible: CollectibleConfig = Field(default_factory=CollectibleConfig)
+    transfer: TransferConfig = Field(default_factory=TransferConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
     risk: RiskLimits = Field(default_factory=RiskLimits)
     orders: OrderEngine = Field(default_factory=OrderEngine)
     sell: SellStrategy = Field(default_factory=SellStrategy)
