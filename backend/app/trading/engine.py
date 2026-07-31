@@ -190,13 +190,31 @@ class TradingEngine:
         ждём чужой ошибки, а сами встаём в очередь покупателей ниже флора.
         Исполненная заявка даёт подарок в инвентарь, и дальше он идёт по
         обычному циклу перепродажи.
+
+        Живая заявка — это живые деньги: площадка резервирует их сразу, до
+        всякого исполнения. Поэтому вне бумажного режима движок подчиняется
+        тем же предохранителям, что и покупка, — тумблеру автомата, белому
+        списку и лимитам. Иначе включённый ордер-движок оказался бы обходной
+        дорогой мимо выключенного автомата.
         """
         report = OrderReport()
         if self.ordering:
             return self.last_orders
 
+        if not self.settings.paper_mode and not self.settings.auto_trade:
+            report.skipped["автомат"] = (
+                "выключен — живые заявки не ставим. Включите автомат "
+                "или оставьте paper-режим"
+            )
+            self.last_orders = report
+            return report
+
         self.ordering = True
         try:
+            if not self.settings.paper_mode:
+                # Баланс нужен до первой заявки: без него нечем ограничить
+                # суммарный объём, а петля работает отдельно от цикла.
+                await self.wallet.refresh()
             for market in registry.trading_markets(self.settings):
                 await self._run_orders_on(market, report)
         except Exception as exc:  # noqa: BLE001 — движок не должен падать
@@ -231,7 +249,7 @@ class TradingEngine:
                 plan = orders_mod.plan_orders(books, policy)
                 report.considered += len(books)
                 report.skipped.update(plan.skipped)
-                await self._apply_orders(adapter, plan, report)
+                await self._apply_orders(adapter, plan, report, market)
         except MarketplaceError as exc:
             report.errors.append(f"{market.value}: {exc}")
 
@@ -268,7 +286,32 @@ class TradingEngine:
             )
         return books
 
-    async def _apply_orders(self, adapter, plan, report: OrderReport) -> None:
+    def _order_blocked(self, intent, market: Market) -> str:
+        """Причина, по которой живую заявку ставить нельзя. Пусто — можно.
+
+        Проверки те же, что у покупки: заявка обещает деньги так же, как
+        покупка их тратит, и площадка резервирует их сразу.
+        """
+        limits = self.settings.risk
+
+        if self.risk.state.tripped:
+            return f"предохранитель: {self.risk.state.trip_reason}"
+        if intent.collection in limits.collection_blacklist:
+            return "коллекция в blacklist"
+        if not limits.collection_whitelist:
+            return "whitelist пуст — автомату торговать нечем"
+        if intent.collection not in limits.collection_whitelist:
+            return "коллекция не в whitelist"
+
+        cost = intent.price_ton * max(intent.amount, 1)
+        if intent.price_ton > limits.max_position_ton:
+            return (
+                f"цена {intent.price_ton:.2f} TON выше лимита на позицию "
+                f"({limits.max_position_ton:.2f})"
+            )
+        return self.wallet.shortfall(market.value, cost)
+
+    async def _apply_orders(self, adapter, plan, report: OrderReport, market: Market) -> None:
         """Исполняем план. В бумажном режиме только считаем — денег не двигаем."""
         for intent in plan.intents:
             if self.settings.paper_mode:
@@ -276,6 +319,15 @@ class TradingEngine:
                 report.log.append(f"[PAPER] {intent.action} {intent.collection} "
                                   f"{intent.price_ton:.2f} TON — {intent.reason}")
                 continue
+
+            # Снятие заявки не проверяем: оно освобождает деньги, а не
+            # обещает их. Запрещать его предохранителем — значит запирать
+            # капитал именно тогда, когда что-то пошло не так.
+            if intent.action is not orders_mod.OrderAction.CANCEL:
+                blocked = self._order_blocked(intent, market)
+                if blocked:
+                    report.skipped[intent.collection] = blocked
+                    continue
 
             try:
                 if intent.action is orders_mod.OrderAction.CANCEL:
@@ -290,6 +342,9 @@ class TradingEngine:
                         intent.collection, intent.price_ton, intent.amount
                     )
                     report.placed += 1
+                    # Иначе весь план пройдёт одну и ту же проверку баланса
+                    # и наобещает больше, чем есть денег.
+                    self.wallet.reserve(market.value, intent.price_ton * max(intent.amount, 1))
                 report.log.append(
                     f"{intent.action} {intent.collection} "
                     f"{intent.price_ton:.2f} TON — {intent.reason}"
