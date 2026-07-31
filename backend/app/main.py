@@ -32,8 +32,15 @@ async def lifespan(app: FastAPI):
     else:
         log.info("Планировщик выключен (FLIPPER_ENABLE_SCHEDULER=0)")
 
+    # Бот уведомлений опрашивает Telegram сам: публичного адреса у
+    # приложения нет и быть не должно, а webhook требует именно его.
+    from app.api.deps import get_engine
+
+    get_engine().bot.start()
+
     yield
 
+    await get_engine().bot.stop()
     scheduler.shutdown()
     await dispose_db()
     log.info("Остановка")

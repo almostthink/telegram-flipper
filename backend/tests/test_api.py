@@ -79,13 +79,21 @@ def test_config_roundtrip(client):
 
 def test_notify_settings_survive_a_partial_patch(client):
     """Правка одного поля не должна сбрасывать соседние — их правил человек."""
-    body = client.put(f"{API_PREFIX}/config", json={"notify": {"chat": "@me_alerts"}}).json()
+    body = client.put(f"{API_PREFIX}/config", json={"notify": {"min_spread": 0.12}}).json()
 
-    assert body["notify"]["chat"] == "@me_alerts"
+    assert body["notify"]["min_spread"] == 0.12
     assert body["notify"]["on_buy"] is True
     assert body["transfer"]["stars_per_gift"] == 25
 
-    client.put(f"{API_PREFIX}/config", json={"notify": {"chat": "me"}})
+    client.put(f"{API_PREFIX}/config", json={"notify": {"min_spread": 0.05}})
+
+
+def test_bot_token_is_never_returned(client):
+    """Токен бота — секрет: наружу отдаём только факт его наличия."""
+    body = client.get(f"{API_PREFIX}/notify").json()
+
+    assert set(body) >= {"token_saved", "chat_bound", "polling"}
+    assert "token" not in body
 
 
 def test_freezing_a_missing_position_is_reported(client):

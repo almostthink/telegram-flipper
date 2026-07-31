@@ -895,23 +895,26 @@ function NotifyCard({
 }) {
   const notify = config.notify
   const transfer = config.transfer
-  const [chat, setChat] = useState(notify.chat)
+  const status = useApi(() => api.notifyStatus())
+  const [token, setToken] = useState('')
+
+  const act = async (fn: () => Promise<{ detail: string }>) => {
+    try {
+      const result = await fn()
+      onReport('info', result.detail)
+      setToken('')
+      await status.reload()
+    } catch (e) {
+      onReport('error', e instanceof Error ? e.message : String(e))
+    }
+  }
 
   return (
     <div className="card">
       <div className="mb-1 flex items-center justify-between">
         <h2 className="text-sm font-medium text-neutral-300">Уведомления в Telegram</h2>
         <div className="flex gap-2">
-          <Button
-            onClick={() =>
-              void api
-                .notifyTest()
-                .then((r) => onReport('info', r.detail))
-                .catch((e: Error) => onReport('error', e.message))
-            }
-          >
-            Проверить
-          </Button>
+          <Button onClick={() => void act(() => api.notifyTest())}>Проверить</Button>
           <Button
             variant={notify.enabled ? 'default' : 'primary'}
             onClick={() => void onPatch({ notify: { enabled: !notify.enabled } })}
@@ -921,39 +924,78 @@ function NotifyCard({
         </div>
       </div>
       <p className="mb-4 text-xs leading-relaxed text-neutral-500">
-        Приходят вашей же сессией Telegram — отдельный бот не нужен, но нужен
-        выполненный вход выше. В сообщении о покупке идут цены коллекции по всем
-        площадкам: решение о переносе принимаете вы, и без цен его не принять.
+        Приходят через вашего бота. Под сообщением о покупке — кнопка{' '}
+        <span className="text-neutral-300">«Заморозить»</span>: нажали с телефона, и
+        движок эту позицию не трогает, пока вы переносите подарок на другую
+        площадку. Без заморозки лот продаётся там, где куплен.
         <br />
-        Перенос делается вручную — через ЛС бота площадки, и стоит{' '}
-        {transfer.stars_per_gift} ⭐. Чтобы движок не продал подарок, пока вы его
-        переносите, нажмите <span className="text-neutral-300">«Заморозить»</span>{' '}
-        в Инвентаре. Без заморозки лот продаётся там, где куплен.
+        Бот, а не ваш аккаунт, по двум причинам: кнопку под сообщением может
+        повесить только бот, и токен бота не даёт доступа ни к чему, кроме него
+        самого. Перенос по-прежнему вручную, через ЛС бота площадки, и стоит{' '}
+        {transfer.stars_per_gift} ⭐.
       </p>
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm text-neutral-400">Куда слать</span>
-          <div className="flex gap-2">
-            <input
-              value={chat}
-              onChange={(event) => setChat(event.target.value)}
-              placeholder="me"
-              className="w-40 rounded-md border border-ink-500 bg-ink-900 px-2 py-1 font-mono text-sm text-neutral-200"
-            />
-            <Button
-              disabled={chat === notify.chat}
-              onClick={() => void onPatch({ notify: { chat: chat.trim() || 'me' } })}
-            >
-              OK
-            </Button>
-          </div>
-        </div>
-        <p className="text-xs text-neutral-600">
-          <span className="font-mono">me</span> — «Избранное». Можно указать
-          @username или id чата.
-        </p>
+      <ol className="mb-4 space-y-1.5 text-xs leading-relaxed text-neutral-400">
+        <li>
+          <span className="text-neutral-500">1.</span> В Telegram откройте{' '}
+          <span className="font-mono text-neutral-300">@BotFather</span> →{' '}
+          <span className="font-mono text-neutral-300">/newbot</span> → придумайте имя.
+          В ответ придёт токен вида{' '}
+          <span className="font-mono text-neutral-300">123456789:AAE…</span>
+        </li>
+        <li>
+          <span className="text-neutral-500">2.</span> Вставьте его ниже.
+        </li>
+        <li>
+          <span className="text-neutral-500">3.</span> Откройте своего бота и отправьте
+          ему <span className="font-mono text-neutral-300">/start</span> — так
+          приложение узнает, в какой чат писать.
+        </li>
+      </ol>
 
+      <div className="mb-4 rounded-lg bg-ink-700 px-3 py-2 text-xs">
+        {!status.data?.token_saved ? (
+          <span className="text-neutral-500">Бот не подключён</span>
+        ) : (
+          <div className="space-y-1">
+            <div className="text-neutral-300">
+              {status.data.bot_username ? `@${status.data.bot_username}` : 'бот подключён'}
+              <span className="ml-2 text-neutral-500">
+                {status.data.chat_bound ? 'чат привязан' : 'ждёт /start в Telegram'}
+              </span>
+            </div>
+            {status.data.problem && (
+              <div className="text-warn">{status.data.problem}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mb-4 space-y-2">
+        <textarea
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+          rows={2}
+          placeholder="123456789:AAE..."
+          className="w-full rounded-md border border-ink-500 bg-ink-900 px-3 py-2 font-mono text-xs text-neutral-200"
+        />
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            disabled={!token.trim()}
+            onClick={() => void act(() => api.setBotToken(token))}
+          >
+            Сохранить токен
+          </Button>
+          {status.data?.token_saved && (
+            <Button variant="danger" onClick={() => void act(() => api.forgetBotToken())}>
+              Отключить бота
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <Button
             variant={notify.on_buy ? 'primary' : 'default'}

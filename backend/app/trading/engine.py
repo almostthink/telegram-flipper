@@ -30,7 +30,7 @@ from app.api.ws import hub
 from app.config import Settings
 from app.domain import Market, utcnow
 from app.ingest.scanner import Scanner
-from app.notify import Notifier
+from app.notify import BotPoller, Notifier
 from app.storage import repo
 from app.storage.db import session_scope
 from app.storage.models import Position, TradeLog
@@ -120,6 +120,8 @@ class TradingEngine:
         self.settings = settings
         self.scanner = Scanner(settings)
         self.notifier = Notifier(settings)
+        #: Опрос Telegram: команды и нажатия кнопок под уведомлениями.
+        self.bot = BotPoller(settings, self)
         self.executor = Executor(settings, notifier=self.notifier)
         self.risk = RiskManager(settings.risk)
         self.wallet = BalanceTracker(settings)
@@ -137,6 +139,7 @@ class TradingEngine:
         self.executor.settings = settings
         self.wallet.settings = settings
         self.notifier.settings = settings
+        self.bot.settings = settings
         self.risk.update_limits(settings.risk)
 
     # --- Основной цикл ---------------------------------------------------
@@ -490,7 +493,7 @@ class TradingEngine:
         self.risk.register_buy(listing.collection, listing.price_ton)
         self.risk.register_success()
         self.wallet.reserve(listing.market, listing.price_ton)
-        await self._notify_buy(signal)
+        await self._notify_buy(signal, result.position_id)
         await hub.broadcast(
             "position_opened",
             {
@@ -501,7 +504,7 @@ class TradingEngine:
         )
         return True, result.detail
 
-    async def _notify_buy(self, signal: Signal) -> None:
+    async def _notify_buy(self, signal: Signal, position_id: int | None) -> None:
         """Сообщение о покупке с ценами по всем площадкам.
 
         Цены здесь не украшение: решение о переносе принимает человек, и
@@ -526,6 +529,7 @@ class TradingEngine:
             roi=signal.net_roi,
             floors=floors,
             paper=self.settings.paper_mode,
+            position_id=position_id,
         )
 
     # --- Заморозка -------------------------------------------------------
@@ -675,6 +679,7 @@ class TradingEngine:
                 collection=position.collection,
                 market=position.market,
                 floors=floors.get(position.collection, {}),
+                position_id=position.id,
             )
 
     async def _list_new(self, position: Position) -> bool:

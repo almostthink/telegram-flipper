@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from app import notify
 from app.adapters import registry
 from app.adapters.har import parse_har
 from app.auth.tma import COOKIE_MARKETS, auth, has_auth_cookie
@@ -186,6 +187,78 @@ async def telegram_logout() -> dict:
     return {"ok": True, "detail": await auth.forget_session()}
 
 
+class BotTokenRequest(BaseModel):
+    token: str
+
+
+@router.get("/notify")
+async def notify_status() -> dict:
+    """Состояние бота уведомлений. Токен наружу не отдаём."""
+    from app.api.deps import get_engine
+    from app.config import settings
+
+    engine = get_engine()
+    username = ""
+    problem = ""
+    if notify.bot_token():
+        try:
+            username = (await notify.BotApi(notify.bot_token()).me()).get("username", "")
+        except Exception as exc:  # noqa: BLE001 — показываем причину как есть
+            problem = _readable(exc)
+
+    return {
+        "token_saved": bool(notify.bot_token()),
+        "bot_username": username,
+        "chat_bound": bool(settings.notify.chat_id),
+        "polling": engine.bot.running,
+        "problem": problem or engine.bot.last_error or engine.notifier.last_error,
+    }
+
+
+@router.post("/notify/bot-token")
+async def set_bot_token(request: BotTokenRequest) -> dict:
+    """Сохраняем токен бота и сразу проверяем его у Telegram.
+
+    Без проверки негодный токен обнаружился бы только тем, что уведомления
+    молча не приходят, — а молчание неотличимо от «сделок не было».
+    """
+    from app.api.deps import get_engine
+
+    try:
+        notify.save_bot_token(request.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        me = await notify.BotApi(notify.bot_token()).me()
+    except Exception as exc:  # noqa: BLE001
+        notify.save_bot_token("")
+        raise HTTPException(status_code=400, detail=_readable(exc)) from exc
+
+    await get_engine().bot.restart()
+    username = me.get("username", "")
+    return {
+        "ok": True,
+        "detail": (
+            f"Бот @{username} подключён. Откройте его в Telegram и отправьте "
+            f"/start — так приложение узнает, в какой чат писать"
+        ),
+    }
+
+
+@router.delete("/notify/bot-token")
+async def forget_bot_token() -> dict:
+    """Забываем бота вместе с привязкой чата."""
+    from app.api.deps import get_engine
+    from app.config import settings
+
+    notify.save_bot_token("")
+    settings.notify.chat_id = 0
+    settings.save()
+    await get_engine().bot.stop()
+    return {"ok": True, "detail": "Бот отключён"}
+
+
 @router.post("/notify/test")
 async def notify_test() -> dict:
     """Пробное уведомление — чтобы не выяснять на первой же сделке.
@@ -198,7 +271,9 @@ async def notify_test() -> dict:
     try:
         await get_engine().notifier.send(
             "Проверка связи. Уведомления о покупках и ценах площадок будут "
-            "приходить сюда."
+            "приходить сюда.\n\nКнопка ниже — та самая заморозка, только без "
+            "позиции она ничего не сделает.",
+            notify.freeze_button(0, frozen=False),
         )
     except Exception as exc:  # noqa: BLE001 — причину показываем пользователю
         raise HTTPException(status_code=400, detail=_readable(exc)) from exc

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 from app.config import MarketplaceConfig, Settings
-from app.notify import Notifier, best_market
+from app.notify import Notifier, best_market, freeze_button, parse_callback
 from app.storage.db import init_db, session_scope
 from app.storage.models import Position
 from app.trading.engine import TradingEngine
@@ -36,18 +36,24 @@ def make_settings(*, paper: bool = True) -> Settings:
 
 
 class Recorder(Notifier):
-    """Уведомитель, который никуда не ходит — только запоминает текст."""
+    """Уведомитель, который никуда не ходит — только запоминает сообщения."""
 
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings)
         self.sent: list[str] = []
+        self.buttons: list[list[list[dict]] | None] = []
 
-    def post(self, text: str, *, key: str = "") -> None:
+    @property
+    def ready(self) -> bool:
+        return True
+
+    def post(self, text: str, *, key: str = "", buttons=None) -> None:
         if not self.settings.notify.enabled or not text.strip():
             return
         if key and not self._remember(key):
             return
         self.sent.append(text)
+        self.buttons.append(buttons)
 
 
 # --- Выбор площадки -------------------------------------------------------
@@ -332,6 +338,113 @@ async def test_failed_delist_does_not_pretend_the_gift_is_free(db, monkeypatch):
     async with session_scope() as session:
         position = await session.get(Position, position_id)
         assert position.frozen is False, "заморозка не состоялась — и вид делать нельзя"
+
+
+# --- Кнопка в Telegram ----------------------------------------------------
+
+
+def test_buy_message_carries_a_freeze_button():
+    """Ради этой кнопки всё и затевалось: заморозить можно с телефона."""
+    notifier = Recorder(make_settings())
+    notifier.buy(
+        collection="Evil Eye",
+        model=None,
+        number=None,
+        market="tonnel",
+        price_ton=8.0,
+        fair_ton=None,
+        roi=None,
+        floors={},
+        paper=False,
+        position_id=7,
+    )
+
+    buttons = notifier.buttons[0]
+    assert buttons is not None
+    assert buttons[0][0]["callback_data"] == "freeze:7"
+
+
+def test_callback_data_is_parsed():
+    assert parse_callback("freeze:12") == ("freeze", 12)
+    assert parse_callback("unfreeze:12") == ("unfreeze", 12)
+
+
+def test_foreign_callback_data_is_rejected():
+    """Данные приходят из сети — принимать их на веру нельзя."""
+    for value in ("", "freeze:", "freeze:abc", "delete:12", "12", "freeze:12:extra"):
+        assert parse_callback(value) is None
+
+
+def test_button_label_says_what_will_happen():
+    assert "Заморозить" in freeze_button(1, frozen=False)[0][0]["text"]
+    assert freeze_button(1, frozen=True)[0][0]["text"] == "Разморозить"
+
+
+async def test_button_press_freezes_the_position(db, monkeypatch):
+    engine = TradingEngine(make_settings())
+    engine.settings.notify.chat_id = 100
+    position_id = await make_position()
+
+    calls = _stub_bot_api(monkeypatch)
+    await engine.bot._handle_callback(
+        {
+            "id": "CB1",
+            "data": f"freeze:{position_id}",
+            "message": {"message_id": 5, "chat": {"id": 100}},
+        }
+    )
+
+    async with session_scope() as session:
+        position = await session.get(Position, position_id)
+        assert position.frozen is True
+
+    assert calls["answerCallbackQuery"], "без ответа кнопка в Telegram зависает"
+    assert calls["editMessageReplyMarkup"], "надпись должна смениться на «Разморозить»"
+
+
+async def test_press_from_another_chat_changes_nothing(db, monkeypatch):
+    """Иначе любой, кто найдёт бота, сможет распоряжаться позициями."""
+    engine = TradingEngine(make_settings())
+    engine.settings.notify.chat_id = 100
+    position_id = await make_position()
+
+    _stub_bot_api(monkeypatch)
+    await engine.bot._handle_callback(
+        {
+            "id": "CB1",
+            "data": f"freeze:{position_id}",
+            "message": {"message_id": 5, "chat": {"id": 999}},
+        }
+    )
+
+    async with session_scope() as session:
+        position = await session.get(Position, position_id)
+        assert position.frozen is False
+
+
+async def test_start_from_a_foreign_chat_does_not_rebind(db, monkeypatch):
+    engine = TradingEngine(make_settings())
+    engine.settings.notify.chat_id = 100
+
+    _stub_bot_api(monkeypatch)
+    await engine.bot._handle_message({"chat": {"id": 999}, "text": "/start"})
+
+    assert engine.settings.notify.chat_id == 100
+
+
+def _stub_bot_api(monkeypatch) -> dict[str, list]:
+    """Подменяем сеть: считаем вызовы вместо походов в Telegram."""
+    from app import notify as notify_mod
+
+    calls: dict[str, list] = {}
+
+    async def fake_call(self, method, payload, *, timeout=20.0):
+        calls.setdefault(method, []).append(payload)
+        return {}
+
+    monkeypatch.setattr(notify_mod.BotApi, "call", fake_call)
+    monkeypatch.setattr(notify_mod, "bot_token", lambda: "123:TEST")
+    return calls
 
 
 async def test_closed_position_cannot_be_frozen(db):

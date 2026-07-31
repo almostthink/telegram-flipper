@@ -293,7 +293,7 @@ export interface AppConfig {
   }
   notify: {
     enabled: boolean
-    chat: string
+    chat_id: number
     on_buy: boolean
     on_sell: boolean
     min_spread: number
@@ -392,6 +392,18 @@ export const api = {
     ),
   telegramProxy: (url: string) =>
     request<{ ok: boolean; detail: string }>('/auth/proxy', json({ url })),
+  notifyStatus: () =>
+    request<{
+      token_saved: boolean
+      bot_username: string
+      chat_bound: boolean
+      polling: boolean
+      problem: string
+    }>('/notify'),
+  setBotToken: (token: string) =>
+    request<{ ok: boolean; detail: string }>('/notify/bot-token', json({ token })),
+  forgetBotToken: () =>
+    request<{ ok: boolean; detail: string }>('/notify/bot-token', { method: 'DELETE' }),
   notifyTest: () =>
     request<{ ok: boolean; detail: string }>('/notify/test', { method: 'POST' }),
   telegramLogout: () =>
