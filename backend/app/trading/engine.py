@@ -222,6 +222,11 @@ class TradingEngine:
                 # суммарный объём, а петля работает отдельно от цикла.
                 await self.wallet.refresh()
             for market in registry.trading_markets(self.settings):
+                if not registry.ADAPTER_CLASSES[market].supports_collection_orders:
+                    # У площадки заявка адресуется конкретному лоту, а не
+                    # коллекции. Ставить «куплю любой Evil Eye» там негде.
+                    report.skipped[market.value] = "нет книги заявок по коллекции"
+                    continue
                 await self._run_orders_on(market, report)
         except Exception as exc:  # noqa: BLE001 — движок не должен падать
             log.exception("Ошибка ордер-движка")

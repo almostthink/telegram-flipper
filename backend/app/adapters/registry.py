@@ -59,6 +59,10 @@ def load_overrides() -> dict[Market, MarketEndpoints]:
                 path=item["path"],
                 method=item.get("method", "GET"),
                 json_path=item.get("json_path", ""),
+                # Часть эндпоинтов живёт на своём домене — у Tonnel торговля
+                # отделена от чтения. Потерять его при чтении правок значит
+                # отправить покупку на читающий сервер.
+                base_url=item.get("base_url", ""),
             )
             for name, item in (spec.get("endpoints") or {}).items()
             if isinstance(item, dict) and item.get("path")
@@ -84,7 +88,12 @@ def save_override(market: Market, endpoints: MarketEndpoints) -> None:
         "base_url": endpoints.base_url,
         "cdn_url": endpoints.cdn_url,
         "endpoints": {
-            name: {"path": spec.path, "method": spec.method, "json_path": spec.json_path}
+            name: {
+                "path": spec.path,
+                "method": spec.method,
+                "json_path": spec.json_path,
+                "base_url": spec.base_url,
+            }
             for name, spec in endpoints.endpoints.items()
         },
     }

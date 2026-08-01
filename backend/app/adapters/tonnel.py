@@ -61,25 +61,62 @@ BID_STEP_FACTOR = 1.05
 #: До скольких знаков площадка округляет ставку — вверх, а не арифметически.
 BID_DECIMALS = 3
 
+#: Торговля живёт на отдельном домене — не на том, откуда читаются лоты.
+#: Площадка держит две площадки серверов, российскую и общую, и выбирает
+#: их по флагу в localStorage. Записанный сеанс шёл через российскую, её и
+#: берём по умолчанию; общая остаётся запасным вариантом на случай, если
+#: первая недоступна.
+TRADE_HOST = "https://rs-api.tonnel.network"
+TRADE_HOST_GLOBAL = "https://gifts.coffin.meme"
+
+#: Актив сделки. Площадка умеет и другие, но подарки за них торгуются
+#: отдельным рынком — смешивать их в одной книге нельзя.
+ASSET = "TON"
+
+#: Ключ подписи из кода мини-аппа. Секретом он не является — лежит в
+#: бандле открытым текстом, — но без него площадка отвергает покупку и
+#: выставление: поле ``wtf`` проверяется на сервере.
+SIGNING_KEY = "yowtfisthispieceofshitiiit"
+
+
+def sign_timestamp(timestamp: int) -> str:
+    """Поле ``wtf``: отметка времени, зашифрованная как в мини-аппе."""
+    from app.adapters.cryptojs import encrypt
+
+    return encrypt(str(timestamp), SIGNING_KEY)
+
+
+def _trade(path: str) -> EndpointSpec:
+    return EndpointSpec(path, method="POST", base_url=TRADE_HOST)
+
+
 DEFAULT_ENDPOINTS = MarketEndpoints(
     base_url="https://gifts2.tonnel.network",
     endpoints={
-        # --- подтверждено записью трафика ---
+        # --- чтение: подтверждено записью трафика ---
         "listings": EndpointSpec("/api/pageGifts", method="POST"),
         "collections": EndpointSpec("/api/filterStats", method="POST", json_path="data"),
         "activity": EndpointSpec("/api/saleHistory", method="POST"),
         "balance": EndpointSpec("/api/balance/info", method="POST"),
-        # --- пути из бандла мини-аппа, тела запросов не подтверждены ---
         "auctions": EndpointSpec("/api/pageGifts", method="POST"),
-        "auction_bid": EndpointSpec("/api/auction/bid", method="POST"),
-        "buy": EndpointSpec("/api/buyGift/", method="POST"),
-        "sell": EndpointSpec("/api/listForSale", method="POST"),
-        "change_price": EndpointSpec("/api/changePrice", method="POST"),
-        "delist": EndpointSpec("/api/cancelSale", method="POST"),
-        "my_orders": EndpointSpec("/api/buyOffer/getMyOffers", method="POST"),
-        "orders": EndpointSpec("/api/buyOffer/getOffers", method="POST"),
-        "order_create": EndpointSpec("/api/buyOffer/create", method="POST"),
-        "order_cancel": EndpointSpec("/api/buyOffer/cancel", method="POST"),
+        # Состояние одного лота вместе с историей ставок — по нему видно,
+        # перебили нашу ставку или нет.
+        "gift_data": EndpointSpec("/api/giftData/{gift_id}", method="POST"),
+        # --- торговля: отдельный домен ---
+        # Ставка подтверждена записью целиком, вместе с ответом.
+        "auction_bid": _trade("/api/auction/bid"),
+        "auction_create": _trade("/api/auction/create"),
+        "auction_cancel": _trade("/api/auction/cancel"),
+        # Остальные тела восстановлены из кода мини-аппа: там они собраны
+        # явно, поле в поле. Живой записью пока не подтверждены.
+        "buy": _trade("/api/buyGift/{sale_id}"),
+        "sell": _trade("/api/listForSale"),
+        "change_price": _trade("/api/changePrice"),
+        "delist": _trade("/api/cancelSale"),
+        "my_orders": _trade("/api/buyOffer/getMyOffers"),
+        "orders": _trade("/api/buyOffer/getOffers"),
+        "order_create": _trade("/api/buyOffer/create"),
+        "order_cancel": _trade("/api/buyOffer/cancel"),
     },
 )
 
@@ -292,7 +329,9 @@ class TonnelAdapter(Marketplace):
     # --- Заявки на покупку ------------------------------------------------
 
     async def my_orders(self) -> list[MarketOrder]:
-        payload = await self.request("my_orders", json_body={"page": 1, "limit": 100})
+        payload = await self.request(
+            "my_orders", json_body={"pageSize": 100, "filter": {}}
+        )
         orders: list[MarketOrder] = []
         for raw in as_list(payload):
             order_id = pick(raw, "_id", "id", "offer_id")
@@ -311,8 +350,14 @@ class TonnelAdapter(Marketplace):
             )
         return orders
 
-    async def top_offers(self) -> list[CollectionOffer]:
-        payload = await self.request("orders", json_body={"page": 1, "limit": 100})
+    async def offers_for(self, gift_id: str) -> list[CollectionOffer]:
+        """Предложения по одному лоту.
+
+        Книги заявок по коллекции у Tonnel нет: предложение адресуется
+        конкретному экземпляру, а не «любому Evil Eye». Поэтому спросить
+        «почём сейчас берут коллекцию» здесь попросту негде.
+        """
+        payload = await self.request("orders", json_body={"gift_id": _as_int(gift_id)})
         offers: list[CollectionOffer] = []
         for raw in as_list(payload):
             collection = pick(raw, "gift_name", "name", "collection")
@@ -326,26 +371,138 @@ class TonnelAdapter(Marketplace):
             )
         return offers
 
+    async def top_offers(self) -> list[CollectionOffer]:
+        """Пусто, и это не заглушка, а свойство площадки — см. offers_for."""
+        return []
+
     async def create_order(self, collection: str, price_ton: float, amount: int) -> str:
-        """Заявка на покупку. Тело не подтверждено — правится импортом HAR."""
+        """Предложение цены по конкретному лоту.
+
+        У Tonnel заявка адресная: не «куплю любой из коллекции», как на
+        MRKT, а предложение владельцу этого экземпляра. Поэтому сюда
+        приходит идентификатор лота, а не имя коллекции, и ``amount``
+        площадкой не поддерживается — предложение всегда на один подарок.
+        """
         payload = await self.request(
             "order_create",
-            json_body={"gift_name": collection, "price": price_ton, "amount": amount},
+            json_body={
+                "gift_id": _as_int(collection),
+                "amount": price_ton,
+                "asset": ASSET,
+            },
         )
         raw = payload if isinstance(payload, dict) else {}
-        order_id = pick(raw, "_id", "id", "offer_id")
+        order_id = pick(raw, "offer_id", "_id", "id")
         if not order_id:
-            raise MarketplaceError(f"Tonnel не принял заявку по «{collection}»")
+            raise MarketplaceError(f"Tonnel не принял предложение по лоту {collection}")
         return str(order_id)
 
     async def cancel_order(self, order_id: str) -> None:
         await self.request("order_cancel", json_body={"offer_id": order_id})
 
     async def place_bid(self, auction_id: str, price_ton: float) -> None:
-        """Ставка на аукционе. Тело не подтверждено — правится импортом HAR."""
-        await self.request(
-            "auction_bid", json_body={"auction_id": auction_id, "amount": price_ton}
+        """Ставка на аукционе. Подтверждена записью вместе с ответом.
+
+        Сумма уходит строкой — так её отправляет мини-апп, и так она
+        доходит без потерь: 3.045 в виде числа с плавающей точкой
+        превращается в 3.0449999999999999, и площадка вправе счесть такую
+        ставку ниже минимальной.
+        """
+        self._require_success(
+            await self.request(
+                "auction_bid",
+                json_body={
+                    "auction_id": auction_id,
+                    "amount": _as_amount(price_ton),
+                    "asset": ASSET,
+                },
+            ),
+            f"ставка {price_ton:.3f} TON по аукциону {auction_id}",
         )
+
+    async def cancel_auction(self, auction_id: str) -> None:
+        self._require_success(
+            await self.request("auction_cancel", json_body={"auction_id": auction_id}),
+            f"снятие аукциона {auction_id}",
+        )
+
+    # --- Покупка и продажа ------------------------------------------------
+
+    async def buy(self, listing: Listing) -> str:
+        """Покупка лота.
+
+        Тело восстановлено из кода мини-аппа: к цене и активу добавляются
+        отметка времени и её подпись. Без подписи площадка отказывает.
+        """
+        stamp = _now()
+        payload = await self.request(
+            "buy",
+            path_params={"sale_id": listing.listing_id},
+            json_body={
+                "asset": ASSET,
+                "price": listing.price_ton,
+                "timestamp": stamp,
+                "wtf": sign_timestamp(stamp),
+            },
+        )
+        self._require_success(payload, f"покупка лота {listing.listing_id}")
+        return listing.listing_id
+
+    async def list_for_sale(self, gift_external_id: str, price_ton: float) -> str:
+        stamp = _now()
+        payload = await self.request(
+            "sell",
+            json_body={
+                "gift_id": _as_int(gift_external_id),
+                "price": price_ton,
+                "asset": ASSET,
+                "timestamp": stamp,
+                "wtf": sign_timestamp(stamp),
+            },
+        )
+        self._require_success(payload, f"выставление лота {gift_external_id}")
+        return gift_external_id
+
+    async def change_price(self, listing_id: str, price_ton: float) -> None:
+        """Смена цены. Цена уходит строкой — так собирает тело мини-апп."""
+        self._require_success(
+            await self.request(
+                "change_price",
+                json_body={"sale_id": _as_int(listing_id), "price": _as_amount(price_ton)},
+            ),
+            f"смена цены лота {listing_id}",
+        )
+
+    async def delist(self, listing_id: str) -> None:
+        self._require_success(
+            await self.request("delist", json_body={"gift_id": _as_int(listing_id)}),
+            f"снятие лота {listing_id} с продажи",
+        )
+
+    async def gift_state(self, gift_id: str) -> dict:
+        """Состояние лота вместе с историей ставок.
+
+        Нужно перед тем, как перебивать: между проходами сканера ставку
+        могли поднять, и слепая ставка по устаревшей цене будет отвергнута.
+        """
+        payload = await self.request(
+            "gift_data", path_params={"gift_id": gift_id}, json_body={"ref": ""}
+        )
+        return payload if isinstance(payload, dict) else {}
+
+    @staticmethod
+    def _require_success(payload: object, what: str) -> None:
+        """Площадка отвечает 200 и на отказ — приговор лежит в теле.
+
+        Без этой проверки неудачная покупка выглядела бы удачной, и
+        приложение завело бы позицию на подарок, которого у него нет.
+        """
+        if not isinstance(payload, dict):
+            return
+        status = str(payload.get("status", "")).lower()
+        if status and status != "success":
+            reason = payload.get("message") or status
+            raise MarketplaceError(f"Tonnel отклонил {what}: {reason}")
 
     # --- Служебное --------------------------------------------------------
 
@@ -401,3 +558,27 @@ def _as_json(value: dict) -> str:
     import json
 
     return json.dumps(value, separators=(",", ":"))
+
+
+def _now() -> int:
+    import time
+
+    return int(time.time())
+
+
+def _as_int(value: object) -> int | str:
+    """Идентификаторы лотов у Tonnel числовые, но приходят к нам строками."""
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _as_amount(price_ton: float) -> str:
+    """Сумма строкой, без хвоста двоичного представления.
+
+    3.045 в виде float печатается как 3.0449999999999999, и площадка
+    вправе счесть такую ставку ниже минимальной. Мини-апп отправляет
+    ровно то, что видит человек, — делаем так же.
+    """
+    return f"{round(price_ton, BID_DECIMALS):g}"

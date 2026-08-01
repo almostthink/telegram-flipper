@@ -258,3 +258,100 @@ def test_endpoints_point_at_the_real_api():
     assert DEFAULT_ENDPOINTS.get("listings").path == "/api/pageGifts"
     assert DEFAULT_ENDPOINTS.get("collections").path == "/api/filterStats"
     assert DEFAULT_ENDPOINTS.get("auction_bid").path == "/api/auction/bid"
+
+
+# --- Торговля -------------------------------------------------------------
+#
+# Ставка подтверждена записью трафика целиком: тело, домен и ответ.
+# Остальные тела восстановлены из кода мини-аппа — там они собраны явно.
+
+
+def test_trading_lives_on_another_host():
+    """Чтение и торговля у Tonnel — разные серверы.
+
+    Запрос на покупку по адресу читающего сервера просто не доходит, а
+    выглядит это как молчаливый отказ площадки.
+    """
+    assert DEFAULT_ENDPOINTS.base_url == "https://gifts2.tonnel.network"
+    assert DEFAULT_ENDPOINTS.get("auction_bid").base_url == "https://rs-api.tonnel.network"
+    assert DEFAULT_ENDPOINTS.get("buy").base_url == "https://rs-api.tonnel.network"
+    # Чтение остаётся на общем домене.
+    assert DEFAULT_ENDPOINTS.get("listings").base_url == ""
+
+
+async def test_bid_body_matches_the_recorded_one():
+    """Ровно то, что ушло с сайта: id аукциона, сумма строкой и актив."""
+    adapter = FakeTonnel({"auction_bid": {"status": "success", "message": "Success"}})
+    await adapter.place_bid("4PWZJQAY", 3.045)
+
+    body = body_of(adapter, "auction_bid")
+    assert body == {
+        "authData": "initdata",
+        "auction_id": "4PWZJQAY",
+        "amount": "3.045",
+        "asset": "TON",
+    }
+
+
+def test_amount_never_leaks_binary_tail():
+    """3.045 как float печатается 3.0449999999999999 — и ставка ниже минимума."""
+    from app.adapters.tonnel import _as_amount
+
+    assert _as_amount(2.9 * 1.05) == "3.045"
+    assert _as_amount(10.0) == "10"
+
+
+async def test_rejection_is_not_mistaken_for_success():
+    """Площадка отвечает 200 и на отказ — приговор лежит в теле.
+
+    Без проверки неудачная покупка выглядела бы удачной, и приложение
+    завело бы позицию на подарок, которого у него нет.
+    """
+    adapter = FakeTonnel(
+        {"auction_bid": {"status": "error", "message": "Bid too low"}}
+    )
+    with pytest.raises(Exception, match="Bid too low"):
+        await adapter.place_bid("A1", 1.0)
+
+
+async def test_purchase_carries_the_signature():
+    """Поле wtf — зашифрованная отметка времени. Без неё покупка не проходит."""
+    from app.adapters.cryptojs import decrypt
+    from app.adapters.tonnel import SIGNING_KEY
+    from app.domain import Listing
+
+    adapter = FakeTonnel({"buy": {"status": "success"}})
+    listing = Listing(
+        market=Market.TONNEL,
+        listing_id="10358715",
+        gift=parse_tonnel_gift(FIXTURES["gifts"][0]),
+        price_ton=3.5,
+    )
+    await adapter.buy(listing)
+
+    body = body_of(adapter, "buy")
+    assert body["price"] == 3.5
+    assert body["asset"] == "TON"
+    assert decrypt(body["wtf"], SIGNING_KEY) == str(body["timestamp"])
+
+
+async def test_listing_for_sale_is_signed_too():
+    from app.adapters.cryptojs import decrypt
+    from app.adapters.tonnel import SIGNING_KEY
+
+    adapter = FakeTonnel({"sell": {"status": "success"}})
+    await adapter.list_for_sale("10358715", 4.2)
+
+    body = body_of(adapter, "sell")
+    assert body["gift_id"] == 10358715, "идентификатор лота у Tonnel числовой"
+    assert body["price"] == 4.2
+    assert decrypt(body["wtf"], SIGNING_KEY) == str(body["timestamp"])
+
+
+async def test_no_collection_order_book():
+    """Заявка у Tonnel адресная — «куплю любой из коллекции» здесь не бывает."""
+    from app.adapters.tonnel import TonnelAdapter
+
+    adapter = FakeTonnel({})
+    assert await adapter.top_offers() == []
+    assert TonnelAdapter.supports_collection_orders is False

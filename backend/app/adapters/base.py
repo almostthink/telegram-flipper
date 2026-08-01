@@ -62,6 +62,11 @@ class EndpointSpec:
     path: str
     method: str = "GET"
     json_path: str = ""
+    #: Свой домен для этого эндпоинта. Пусто — берётся общий ``base_url``.
+    #: Нужен там, где площадка держит чтение и торговлю на разных серверах:
+    #: у Tonnel это буквально разные домены, и запрос на покупку по адресу
+    #: читающего сервера просто не доходит.
+    base_url: str = ""
 
 
 @dataclass(slots=True)
@@ -180,6 +185,11 @@ class Marketplace(ABC):
     name: Market
     #: Умеет ли адаптер покупать и продавать, а не только читать цены.
     supports_trading: bool = False
+    #: Есть ли на площадке книга заявок по коллекции — «куплю любой подарок
+    #: из этой коллекции по такой цене». Именно с ней работает ордер-движок.
+    #: Там, где заявка адресуется конкретному экземпляру (Tonnel), такой
+    #: книги нет, и вставать в очередь по коллекции попросту негде.
+    supports_collection_orders: bool = False
     #: Куда класть учётные данные. Переопределяется в адаптере площадки.
     auth_placement: AuthPlacement = AuthPlacement.HEADER
 
@@ -290,6 +300,9 @@ class Marketplace(ABC):
         # Часть адресов содержит идентификатор прямо в пути: отмена ордера
         # адресуется как /orders/cancel/<id>, тела у неё нет.
         path = spec.path.format(**path_params) if path_params else spec.path
+        if spec.base_url:
+            # httpx: абсолютный адрес перекрывает base_url клиента.
+            path = spec.base_url.rstrip("/") + path
         json_body = self._inject_body_auth(endpoint, json_body)
         await self.open()
         assert self._client is not None

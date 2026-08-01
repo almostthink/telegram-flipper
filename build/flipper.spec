@@ -48,6 +48,9 @@ a = Analysis(  # noqa: F821
         "apscheduler.schedulers.asyncio",
         "apscheduler.triggers.interval",
         "apscheduler.executors.asyncio",
+        # Шифрование подписи для Tonnel. Модуль импортируется отложенно,
+        # внутри функции, и статического импорта PyInstaller не видит.
+        "pyaes",
         "app.main",
     ]
     # Pyrogram разрешает конструкторы протокола Telegram по числовому

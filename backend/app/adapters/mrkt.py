@@ -217,6 +217,7 @@ def parse_mrkt_gift(raw: dict) -> Gift:
 class MrktAdapter(Marketplace):
     name = Market.MRKT
     supports_trading = True
+    supports_collection_orders = True
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
