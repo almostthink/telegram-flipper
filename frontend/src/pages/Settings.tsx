@@ -769,6 +769,11 @@ function HarCard({
           откройте любой запрос → Headers → Request Headers → правый клик по{' '}
           <span className="font-mono">Authorization</span> → Copy value.
         </Alert>
+        <Alert tone="info">
+          Файл можно загрузить архивом. HAR — это текст, zip ужимает его примерно
+          в пятнадцать раз, и запись торговой сессии проходит целиком, без
+          вырезания половины действий.
+        </Alert>
         <Alert tone="warn">
           HAR содержит токен вашей сессии — обращайтесь с ним как с паролем и никому
           не пересылайте.
@@ -790,7 +795,7 @@ function HarCard({
         <input
           ref={fileRef}
           type="file"
-          accept=".har,application/json"
+          accept=".har,.zip,application/json,application/zip"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0]

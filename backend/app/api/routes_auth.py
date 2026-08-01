@@ -17,7 +17,14 @@ from app.domain import Market
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 
-MAX_HAR_BYTES = 40 * 1024 * 1024
+#: Предел размера записи. Разбор идёт в памяти целиком — HAR это один
+#: JSON-документ, по кускам его не прочитать, — поэтому предел есть. Но
+#: прежние 40 МБ отсекали обычную запись торговой сессии: базовый снимок
+#: подарков занимает больше сам по себе.
+MAX_HAR_BYTES = 250 * 1024 * 1024
+
+#: Расширения, внутри которых ищем HAR при загрузке архива.
+HAR_SUFFIXES = (".har", ".json")
 
 
 class TokenRequest(BaseModel):
@@ -369,13 +376,37 @@ async def import_har(market_name: str, file: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail="Неизвестная площадка") from exc
 
     raw = await file.read()
+    try:
+        raw = _unpack(raw, file.filename or "")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     if len(raw) > MAX_HAR_BYTES:
-        raise HTTPException(status_code=413, detail="HAR больше 40 МБ — сократите запись")
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Запись весит {len(raw) / 1024 / 1024:.0f} МБ, предел — "
+                f"{MAX_HAR_BYTES // 1024 // 1024} МБ. Заархивируйте файл в zip "
+                f"(HAR — текст, жмётся раз в пятнадцать) либо запишите заново: "
+                f"очистите журнал сети, включите фильтр Fetch/XHR и повторите "
+                f"только нужные действия. Раздувают запись картинки и анимации, "
+                f"а нужны из неё только запросы к API."
+            ),
+        )
 
     try:
         result = parse_har(raw, host_filter=_host_hint(market))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except MemoryError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "Не хватило памяти на разбор записи. Запишите её заново, "
+                "оставив только нужные действия: очистите журнал сети и "
+                "включите фильтр Fetch/XHR."
+            ),
+        ) from exc
 
     merged = result.to_endpoints(registry.endpoints_for(market))
     registry.save_override(market, merged)
@@ -422,6 +453,46 @@ async def import_har(market_name: str, file: UploadFile = File(...)) -> dict:
             for call in result.trade_calls[:40]
         ],
     }
+
+
+def _unpack(raw: bytes, filename: str) -> bytes:
+    """Достаём HAR из zip, если пришёл архив.
+
+    Архив здесь не прихоть: HAR — текст, и zip ужимает его раз в
+    пятнадцать. Это единственный способ передать запись целиком, не
+    вырезая из неё половину действий.
+    """
+    if not raw.startswith(b"PK\x03\x04"):
+        return raw
+
+    import io
+    import zipfile
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"Файл {filename or 'архив'} повреждён — распаковать не вышло") from exc
+
+    with archive:
+        members = [
+            item
+            for item in archive.infolist()
+            if not item.is_dir() and item.filename.lower().endswith(HAR_SUFFIXES)
+        ]
+        if not members:
+            raise ValueError("В архиве нет файла .har — положите туда саму запись")
+
+        # Берём самый большой: рядом с записью в архив часто попадают
+        # мелкие служебные json, и брать первый попавшийся нельзя.
+        target = max(members, key=lambda item: item.file_size)
+        if target.file_size > MAX_HAR_BYTES:
+            # Проверяем до распаковки: иначе архив в пару мегабайт
+            # разворачивается в гигабайты и кладёт приложение.
+            raise ValueError(
+                f"Внутри архива {target.file_size / 1024 / 1024:.0f} МБ, "
+                f"предел — {MAX_HAR_BYTES // 1024 // 1024} МБ"
+            )
+        return archive.read(target)
 
 
 def _host_hint(market: Market) -> str | None:

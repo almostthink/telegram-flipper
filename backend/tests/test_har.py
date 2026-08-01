@@ -311,3 +311,90 @@ def test_buy_never_overwrites_the_listings_path():
 
     listings = next(f for f in result.findings if f.endpoint == "listings")
     assert listings.path == "/api/v1/gifts"
+
+
+# --- Загрузка архивом -----------------------------------------------------
+#
+# HAR — текст, zip ужимает его раз в пятнадцать. Для записи торговой
+# сессии это единственный способ передать её целиком: базовый снимок
+# подарков сам по себе занимает больше прежнего предела.
+
+
+def zipped(payload: str, name: str = "trace.har") -> bytes:
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(name, payload)
+    return buffer.getvalue()
+
+
+def test_zip_is_unpacked():
+    from app.api.routes_auth import _unpack
+
+    payload = har(entry("https://api.tgmrkt.io/v1/gifts", body={"gifts": [{"id": 1}]}))
+    assert _unpack(zipped(payload), "trace.zip") == payload.encode()
+
+
+def test_plain_har_passes_through_untouched():
+    from app.api.routes_auth import _unpack
+
+    payload = har(entry("https://api.tgmrkt.io/v1/gifts", body={"gifts": [{"id": 1}]}))
+    assert _unpack(payload.encode(), "trace.har") == payload.encode()
+
+
+def test_biggest_member_wins():
+    """Рядом с записью в архив попадают мелкие служебные json."""
+    import io
+    import zipfile
+
+    from app.api.routes_auth import _unpack
+
+    payload = har(entry("https://api.tgmrkt.io/v1/gifts", body={"gifts": [{"id": 1}]}))
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("meta.json", "{}")
+        archive.writestr("trace.har", payload)
+
+    assert _unpack(buffer.getvalue(), "trace.zip") == payload.encode()
+
+
+def test_archive_without_har_is_reported():
+    import io
+    import zipfile
+
+    from app.api.routes_auth import _unpack
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("readme.txt", "нет тут ничего")
+
+    with pytest.raises(ValueError, match="нет файла"):
+        _unpack(buffer.getvalue(), "trace.zip")
+
+
+def test_zip_bomb_is_stopped_before_unpacking():
+    """Архив в пару мегабайт разворачивается в гигабайты и кладёт приложение.
+
+    Размер объявлен в оглавлении архива, поэтому проверить его можно, не
+    распаковывая, — этим и пользуемся.
+    """
+    import io
+    import zipfile
+
+    from app.api.routes_auth import MAX_HAR_BYTES, _unpack
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("huge.har", b"\0" * (MAX_HAR_BYTES + 1))
+
+    with pytest.raises(ValueError, match="предел"):
+        _unpack(buffer.getvalue(), "bomb.zip")
+
+
+def test_broken_archive_is_reported():
+    from app.api.routes_auth import _unpack
+
+    with pytest.raises(ValueError, match="повреждён"):
+        _unpack(b"PK\x03\x04" + "мусор".encode(), "trace.zip")
